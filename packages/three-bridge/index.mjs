@@ -413,11 +413,12 @@ function buildTexture(THREE, descriptor, label, state) {
   return state.textures.get(descriptor);
 }
 
-function buildMaterial(THREE, source, label, state) {
+function buildMaterial(THREE, source, label, state, vertexColors = false) {
   const usesLayers = LAYER_FIELDS.some(([, field]) => source[field] !== undefined);
   const MaterialClass = usesLayers && typeof THREE.MeshPhysicalMaterial === 'function' ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
   if (usesLayers && MaterialClass === THREE.MeshStandardMaterial) state.warnings.push(`${label}: the THREE namespace has no MeshPhysicalMaterial, so clearcoat, transmission and ior are dropped.`);
   const material = new MaterialClass();
+  material.vertexColors = vertexColors;
   material.color.setRGB(...source.color);
   material.metalness = source.metallic ?? 0;
   material.roughness = source.roughness ?? 1;
@@ -475,8 +476,15 @@ export function toThreeObject(parts, THREE, options = {}) {
     const label = checkPart(part, index, limits);
     if (part.skin || part.morph) state.warnings.push(`${label}: skin and morph targets are not exported to three.js objects.`);
     if (!geometries.has(part.geometry)) geometries.set(part.geometry, buildGeometry(THREE, part.geometry));
-    if (!materials.has(part.material)) materials.set(part.material, buildMaterial(THREE, part.material, label, state));
-    const mesh = new THREE.Mesh(geometries.get(part.geometry), materials.get(part.material));
+    const geometry = geometries.get(part.geometry);
+    const vertexColors = !!geometry.getAttribute('color');
+    let variants = materials.get(part.material);
+    if (!variants) {
+      variants = new Map();
+      materials.set(part.material, variants);
+    }
+    if (!variants.has(vertexColors)) variants.set(vertexColors, buildMaterial(THREE, part.material, label, state, vertexColors));
+    const mesh = new THREE.Mesh(geometry, variants.get(vertexColors));
     mesh.name = part.name ?? `part-${index}`;
     mesh.matrixAutoUpdate = false;
     mesh.matrix.fromArray(Array.from(part.matrix));

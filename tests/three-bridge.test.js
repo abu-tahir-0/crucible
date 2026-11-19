@@ -251,6 +251,18 @@ function trianglePart(geometryChanges) {
   return { name: 'triangle', geometry, matrix, material: { color: [1, 1, 1], metallic: 0, roughness: 1 } };
 }
 
+test('toThreeObject gives vertex-coloured parts a material variant with vertexColors on', () => {
+  const material = { color: [1, 1, 1], metallic: 0, roughness: 1 };
+  const plain = trianglePart({});
+  plain.material = material;
+  const coloured = trianglePart({ colors: new Float32Array(9).fill(0.5) });
+  coloured.material = material;
+  const { object } = toThreeObject([plain, coloured], THREE);
+  assert.equal(object.children[0].material.vertexColors, false);
+  assert.equal(object.children[1].material.vertexColors, true);
+  assert.notEqual(object.children[0].material, object.children[1].material);
+});
+
 test('toThreeObject refuses attribute arrays that do not match the vertex count and indices past the last vertex', () => {
   assert.ok(toThreeObject([trianglePart({})], THREE).object);
   assert.throws(() => toThreeObject([trianglePart({ normals: new Float32Array(6) })], THREE), /6 values in geometry\.normals.*3 vertices need 9/);
