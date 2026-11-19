@@ -35,6 +35,16 @@ function boundsOfPositions(positions) {
   return { minimum, maximum };
 }
 
+// One non-finite vertex would make the grid size or a cell lookup NaN and every visibility silently NaN, so name the value and
+// where it is instead.
+function requireFiniteVertices(positions) {
+  for (let offset = 0; offset < positions.length; offset++) {
+    if (!Number.isFinite(positions[offset])) {
+      throw new RangeError(`Pass only finite vertex positions, got ${String(positions[offset])} at index ${offset}.`);
+    }
+  }
+}
+
 /**
  * Measures the leaf density of one foliage geometry and returns `{ visibilityOf(positions) }`, which gives one sky visibility
  * in 0 to 1 for every vertex of any geometry of the same crown. A thinner level of detail asks the field of the fullest
@@ -42,9 +52,10 @@ function boundsOfPositions(positions) {
  * put them in cells that looked solid and left the far crown near black.
  */
 export function createCrownSkyField(positions) {
-  if (positions.length === 0 || positions.length % 3 !== 0) {
+  if (!positions || typeof positions.length !== 'number' || positions.length === 0 || positions.length % 3 !== 0) {
     throw new RangeError('Pass at least one vertex position (a multiple of 3 floats).');
   }
+  requireFiniteVertices(positions);
   const { minimum, maximum } = boundsOfPositions(positions);
   const longest = Math.max(maximum[0] - minimum[0], maximum[1] - minimum[1], maximum[2] - minimum[2], 1e-6);
   const cell = longest / GRID_CELLS_ALONG_LONGEST_SIDE;
@@ -78,6 +89,10 @@ export function createCrownSkyField(positions) {
   }
 
   function visibilityOf(targetPositions) {
+    if (!targetPositions || typeof targetPositions.length !== 'number' || targetPositions.length % 3 !== 0) {
+      throw new RangeError('Pass target vertex positions as a multiple of 3 floats.');
+    }
+    requireFiniteVertices(targetPositions);
     const vertexCount = targetPositions.length / 3;
     const visibility = new Float32Array(vertexCount);
     for (let vertex = 0; vertex < vertexCount; vertex++) {

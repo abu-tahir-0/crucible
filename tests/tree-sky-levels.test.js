@@ -133,3 +133,19 @@ test('createCrownSkyField names the fix for an empty or ragged positions array',
   assert.throws(() => createCrownSkyField(new Float32Array(0)), /at least one vertex position/);
   assert.throws(() => createCrownSkyField(new Float32Array(4)), /multiple of 3/);
 });
+
+test('createCrownSkyField refuses a missing position list and non-finite vertices (#2616)', () => {
+  for (const positions of [null, undefined]) {
+    assert.throws(() => createCrownSkyField(positions), /Pass at least one vertex position \(a multiple of 3 floats\)/, String(positions));
+  }
+  for (const positions of [[0, NaN, 0, 1, 0, 0], [0, 0, 0, Infinity, 0, 0]]) {
+    assert.throws(() => createCrownSkyField(positions), /Pass only finite vertex positions, got (NaN|Infinity) at index [13]/, `${positions}`);
+  }
+});
+
+test('visibilityOf refuses a missing target list and a non-finite target (#2616)', () => {
+  const field = createCrownSkyField([0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0]);
+  assert.throws(() => field.visibilityOf(null), /Pass target vertex positions as a multiple of 3 floats/);
+  assert.throws(() => field.visibilityOf([0, NaN, 0]), /Pass only finite vertex positions, got NaN at index 1/);
+  assert.deepEqual([...field.visibilityOf([])], [], 'an empty target list still returns no values');
+});
