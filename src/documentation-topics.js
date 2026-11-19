@@ -13,6 +13,20 @@ export const documentationGroups = [
 // Old links keep working after the start pages replaced the first sections of the guide.
 export const topicAliases = { overview: 'introduction', 'getting-started': 'first-scene' };
 
+// Reads the topic and section from `location.hash`, such as `#install/setup`. A part with a malformed percent escape (a cut
+// link) reads as empty, so the first topic still opens instead of the whole page failing on decodeURIComponent.
+export function parseTopicHash(hash) {
+  const parts = hash.replace(/^#/, '').split('/').map(part => {
+    try {
+      return decodeURIComponent(part);
+    } catch {
+      return '';
+    }
+  });
+  const [hashTopic = '', requestedSection = ''] = parts;
+  return { hashTopic, requestedTopic: topicAliases[hashTopic] ?? hashTopic, requestedSection };
+}
+
 export function topicSlug(text) {
   return text.trim().toLowerCase().replace(/`/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }

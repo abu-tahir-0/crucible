@@ -4,7 +4,7 @@ import guide from '../docs/guide.md?raw';
 import { highlightCode } from './code-highlight.js';
 import { createLiveExample, autoRunVisibleExamples } from './docs-live.js';
 import { createApiReference } from './docs-api.js';
-import { topicAliases, topicSlug, guideTopics, learnTopics, orderTopics } from './documentation-topics.js';
+import { parseTopicHash, topicAliases, topicSlug, guideTopics, learnTopics, orderTopics } from './documentation-topics.js';
 
 const learnSources = import.meta.glob('../docs/learn/*.md', { query: '?raw', import: 'default', eager: true });
 
@@ -348,8 +348,7 @@ function renderOutline(section) {
 }
 
 function parseHash() {
-  const [requestedTopic = '', requestedSection = ''] = decodeURIComponent(location.hash.slice(1)).split('/');
-  return { hashTopic: requestedTopic, requestedTopic: topicAliases[requestedTopic] ?? requestedTopic, requestedSection };
+  return parseTopicHash(location.hash);
 }
 
 function stopExamples() {
