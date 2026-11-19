@@ -225,6 +225,18 @@ test('a shader material and a skinned mesh without bones throw errors that name 
   assert.equal(skipped.warnings.length, 2);
 });
 
+test('a mesh with no material throws a ThreeBridgeError that skipUnsupported can skip', () => {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), null);
+  mesh.name = 'unpainted';
+  assert.throws(() => fromThreeObject(mesh), error => {
+    assert.equal(error.name, 'ThreeBridgeError');
+    assert.match(error.message, /Mesh "unpainted" has no material.*MeshStandardMaterial/);
+    return true;
+  });
+  const skipped = fromThreeObject(new THREE.Group().add(mesh), { skipUnsupported: true });
+  assert.equal(skipped.parts.length, 0);
+});
+
 test('limits are bounded and errors say what to pass', () => {
   const instanced = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial(), 20);
   assert.throws(() => fromThreeObject(instanced, { maxParts: 10 }), /Raise maxParts/);

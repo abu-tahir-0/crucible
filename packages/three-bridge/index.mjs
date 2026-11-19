@@ -271,6 +271,9 @@ function instanceCount(object, state) {
 function importMesh(object, limits, state) {
   checkMesh(object, state);
   const materials = Array.isArray(object.material) ? object.material : [object.material];
+  if (materials.some(material => material == null)) {
+    throw new ThreeBridgeError(`${describe(object)} has no material. Assign a MeshStandardMaterial (or any three.js material) to the mesh, or pass skipUnsupported: true to leave it out.`);
+  }
   const groups = Array.isArray(object.material) ? object.geometry.groups : [{ start: 0, count: Infinity, materialIndex: 0 }];
   if (!groups?.length) {
     throw new ThreeBridgeError(`${describe(object)} has a material array but geometry.groups is empty. Add groups with geometry.addGroup(start, count, materialIndex), or pass one material.`);
