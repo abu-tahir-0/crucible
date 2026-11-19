@@ -64,6 +64,24 @@ test('the baseline records the three.js version and its scene sizes', () => {
   assert.ok(baseline.three['gltf-box'].gzip > 0);
 });
 
+test('the initial total skips a static import of an external package', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'size-external-'));
+  try {
+    writeFileSync(join(directory, 'main.js'), "import 'manifold-3d'; export const run = () => 1;\n");
+    const result = await build({
+      stdin: { contents: "export * from './main.js';", resolveDir: directory, loader: 'js' },
+      bundle: true, format: 'esm', write: false, metafile: true, outdir: join(directory, 'out'),
+      external: ['manifold-3d'], logLevel: 'silent',
+    });
+    const outputs = result.metafile.outputs;
+    const entryPath = Object.keys(outputs).find(path => outputs[path].entryPoint === '<stdin>');
+    assert.ok(outputs[entryPath].imports.some(imported => imported.external && imported.path === 'manifold-3d'));
+    assert.deepEqual([...initialOutputPaths(result.metafile)], [entryPath]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('the initial total follows static imports into shared chunks and skips lazy modules', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'size-initial-'));
   try {

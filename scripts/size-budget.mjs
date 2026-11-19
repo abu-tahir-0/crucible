@@ -60,7 +60,8 @@ export function initialOutputPaths(metafile) {
     if (reached.has(path)) continue;
     reached.add(path);
     for (const imported of metafile.outputs[path].imports) {
-      if (imported.kind === 'import-statement') pending.push(imported.path);
+      if (imported.kind !== 'import-statement' || imported.external) continue;
+      pending.push(imported.path);
     }
   }
   return reached;
