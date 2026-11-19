@@ -55,6 +55,18 @@ function surfaceArea(geometry) {
   return area;
 }
 
+test('createMeshData names a missing argument or null attributes at the public boundary', () => {
+  assert.throws(() => createMeshData(), /createMeshData needs an options object/);
+  assert.throws(() => createMeshData(null), /createMeshData needs an options object/);
+  const options = {
+    positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+    faceOffsets: new Uint32Array([0, 3]),
+    cornerVertices: new Uint32Array([0, 1, 2]),
+    attributes: null,
+  };
+  assert.throws(() => createMeshData(options), /attributes must be an object/);
+});
+
 test('MeshData derives unique edges for a cube', () => {
   const cube = unitCube();
   assert.equal(cube.vertexCount, 8);

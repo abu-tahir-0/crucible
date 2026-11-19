@@ -128,7 +128,14 @@ export function deriveEdges(vertexCount, faceOffsets, cornerVertices) {
  * attributes: { point: { name: { data, size } }, edge: {...}, face: {...}, corner: {...} }.
  * Edge attributes are only accepted together with edgeVertices and cornerEdges, because derived edge order is internal.
  */
-export function createMeshData({ positions, faceOffsets, cornerVertices, edgeVertices, cornerEdges, attributes = {} }) {
+export function createMeshData(options) {
+  if (options === null || typeof options !== 'object') {
+    throw new TypeError('createMeshData needs an options object with positions, faceOffsets and cornerVertices.');
+  }
+  const { positions, faceOffsets, cornerVertices, edgeVertices, cornerEdges, attributes = {} } = options;
+  if (attributes === null || typeof attributes !== 'object' || Array.isArray(attributes)) {
+    throw new TypeError('attributes must be an object with point, edge, face and corner domains.');
+  }
   if (!(positions instanceof Float32Array) || positions.length % 3 !== 0 || positions.length === 0) {
     throw new TypeError('positions must be a nonempty Float32Array of XYZ triples.');
   }
