@@ -245,6 +245,13 @@ test('input is validated with messages that say what to pass', () => {
   assert.throws(() => createRuntime(target, { scheduler, systems: [{ update() {} }] }), /unique name/);
   assert.throws(() => createRuntime(target, { scheduler, systems: [{ name: 'x', update: 3 }] }), /update must be a function/);
   assert.throws(() => createRuntime(target, { scheduler, frame: 3 }), /frame must be a function/);
+  for (const clock of ['x', 3, {}]) {
+    assert.throws(
+      () => createRuntime(target, { scheduler, clock }),
+      error => error instanceof TypeError && /createRuntime clock must be a function/.test(error.message),
+      String(clock),
+    );
+  }
   assert.throws(() => createRuntime(target), /requestAnimationFrame/);
 });
 

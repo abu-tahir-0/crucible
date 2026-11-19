@@ -74,6 +74,9 @@ function validateOptions(target, options) {
   if (options.frame !== undefined && typeof options.frame !== 'function') {
     throw new TypeError('createRuntime frame must be a function (context) => frame for target.render, or left out.');
   }
+  if (options.clock !== undefined && typeof options.clock !== 'function') {
+    throw new TypeError('createRuntime clock must be a function () => milliseconds, or left out.');
+  }
   for (const name of ['pauseWhenHidden', 'pauseWhenOffscreen', 'idleSleep']) {
     if (typeof (options[name] ?? true) !== 'boolean') throw new TypeError(`createRuntime ${name} must be a boolean.`);
   }
