@@ -744,7 +744,7 @@ function createClient(settings, stats) {
 
   // Moves the drawing clock on with real time, nudged by at most a tenth toward "newest snapshot minus the delay".
   function advanceRenderTime(deltaSeconds) {
-    if (renderTime === null) return;
+    if (renderTime === null || !Number.isFinite(deltaSeconds) || deltaSeconds < 0) return;
     const target = latestTick * stepSeconds - settings.interpolationDelaySeconds;
     const error = target - renderTime;
     if (Math.abs(error) > 1) {

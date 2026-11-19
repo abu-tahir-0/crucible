@@ -66,6 +66,25 @@ function distance(first, second) {
   return Math.hypot(first[0] - second[0], first[1] - second[1], first[2] - second[2]);
 }
 
+test('a non-finite or negative frame time is ignored instead of freezing entities at NaN', () => {
+  const network = createLoopbackNetwork({ seed: 3, latencyMilliseconds: 10 });
+  const server = createPeer({ role: 'authority', authority: 'server', transport: network.createTransport('server') });
+  server.netcode.addEntity('crate', { tag: 'prop', state: { position: [0, 0, 0] } });
+  const client = createPeer({ role: 'client', serverId: 'server', transport: network.createTransport('client-a') });
+  for (let frame = 0; frame < 60; frame += 1) {
+    network.advance(FRAME_MILLISECONDS);
+    server.runtime.step(FRAME_MILLISECONDS);
+    client.runtime.step(FRAME_MILLISECONDS);
+  }
+  const position = client.netcode.getEntityState('crate').position;
+  assert.ok(position.every(Number.isFinite));
+  client.netcode.update(NaN);
+  client.netcode.update(-1);
+  for (let frame = 0; frame < 5; frame += 1) client.netcode.update(0.02);
+  const recovered = client.netcode.getEntityState('crate').position;
+  assert.ok(recovered.every(Number.isFinite), `position after a bad frame time: ${recovered}`);
+});
+
 test('a predicted local player converges to the authority after reconciliation', () => {
   const { server, clientA, clientB } = runSession();
   for (const [client, id] of [[clientA, 'a'], [clientB, 'b']]) {
