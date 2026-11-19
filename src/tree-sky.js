@@ -1,6 +1,7 @@
 // Sky visibility inside a tree crown: how much of the sky a leaf card sees through the other leaves around it.
 // Leaf vertices are binned into a coarse grid, and each vertex looks up through the grid along a few directions; the
 // more leaf it passes, the less sky it keeps. The result is stored once, when the tree is built, as one value per vertex.
+import { invalidField } from './field-error.js';
 
 const GRID_CELLS_ALONG_LONGEST_SIDE = 14;
 // Leaf vertices per cell that cut the sky to 1/e over one cell of path. Fitted once against Cycles on the `foliage` scene.
@@ -78,6 +79,9 @@ export function createCrownSkyField(positions) {
   }
 
   function visibilityOf(targetPositions) {
+    if (!targetPositions.every(Number.isFinite)) {
+      throw invalidField('targetPositions', targetPositions, 'finite vertex positions, one x, y, z per vertex');
+    }
     const vertexCount = targetPositions.length / 3;
     const visibility = new Float32Array(vertexCount);
     for (let vertex = 0; vertex < vertexCount; vertex++) {
