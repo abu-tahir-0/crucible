@@ -6,6 +6,7 @@ import { createLiveExample, autoRunVisibleExamples } from './docs-live.js';
 import { createApiReference } from './docs-api.js';
 import { topicAliases, topicSlug, guideTopics, learnTopics, orderTopics } from './documentation-topics.js';
 import { parseDocumentationHash } from './documentation-hash.js';
+import { parseFigure } from './documentation-figure.js';
 
 const learnSources = import.meta.glob('../docs/learn/*.md', { query: '?raw', import: 'default', eager: true });
 
@@ -225,8 +226,7 @@ function renderFence(block, section) {
 }
 
 function figure(paragraph) {
-  const match = paragraph.match(/^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)$/);
-  const [, alt, source, caption] = match;
+  const { alt, source, caption } = parseFigure(paragraph);
   const element = document.createElement('figure');
   element.className = 'doc-figure';
   if (/\.(webm|mp4)$/.test(source)) {
@@ -288,7 +288,7 @@ function renderParagraph(paragraph, section) {
     scroll.className = 'table-scroll';
     scroll.append(table);
     section.append(scroll);
-  } else if (/^!\[[^\]]*\]\([^)]+\)$/.test(paragraph)) {
+  } else if (parseFigure(paragraph)) {
     section.append(figure(paragraph));
   } else if (paragraph.startsWith('>')) {
     section.append(callout(paragraph));
