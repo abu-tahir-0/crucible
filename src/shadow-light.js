@@ -38,6 +38,9 @@ export function resolveShadowLight(world, lightDirection, shadowBounds = {}, fit
   const { distance, ...view } = fittedView ?? SHADOW_VIEWS[world ? 'world' : 'studio'];
   const target = shadowBounds.target ?? view.target;
   const requested = lightDirection ?? DEFAULT_SUN_DIRECTION;
+  if (requested.length !== 3 || !requested.every(Number.isFinite)) {
+    throw new RangeError(`resolveShadowLight: lightDirection was ${requested}; pass three finite numbers for the sun direction.`);
+  }
   const direction = Math.hypot(requested[0], requested[1], requested[2]) > 1e-6 ? requested : DEFAULT_SUN_DIRECTION;
   const length = Math.hypot(direction[0], direction[1], direction[2]);
   const eye = target.map((value, axis) => value + (direction[axis] / length) * distance);
@@ -54,6 +57,11 @@ const FILTER_REACH_TEXELS = 3.5;
  * for any depth range. `light` is the result of `resolveShadowLight`.
  */
 export function shadowBiasPerSlope(light, mapSize) {
+  if (!Number.isInteger(mapSize) || mapSize < 1) {
+    throw new RangeError(`shadowBiasPerSlope: mapSize was ${mapSize}; pass a whole number of pixels, at least 1.`);
+  }
+  if (!(light.far > light.near)) throw new RangeError(`shadowBiasPerSlope: far (${light.far}) must be greater than near (${light.near}) for a nonempty depth range.`);
+  if (!(light.extent > 0)) throw new RangeError(`shadowBiasPerSlope: extent must be greater than 0, got ${light.extent}.`);
   const texelWorldSize = (light.extent * 2) / mapSize;
   return (texelWorldSize * FILTER_REACH_TEXELS) / (light.far - light.near);
 }

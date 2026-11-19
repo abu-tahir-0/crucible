@@ -9,6 +9,21 @@ function directionBetween(light) {
   return offset.map(value => value / length);
 }
 
+test('resolveShadowLight refuses a non-finite light direction with the range to pass', () => {
+  assert.throws(() => resolveShadowLight(true, [Infinity, 1, 0]), /resolveShadowLight: lightDirection.*pass three finite numbers/);
+  assert.throws(() => resolveShadowLight(false, [NaN, 0, 1]), /resolveShadowLight: lightDirection/);
+  assert.ok(resolveShadowLight(true, [-3, 6, 4]).eye.every(Number.isFinite));
+});
+
+test('shadowBiasPerSlope refuses a bad depth range, extent or map size', () => {
+  const light = { extent: 65, near: 1, far: 220 };
+  assert.throws(() => shadowBiasPerSlope({ ...light, far: light.near }, 2048), /far \(1\) must be greater than near \(1\)/);
+  assert.throws(() => shadowBiasPerSlope({ ...light, far: 0 }, 2048), /far \(0\) must be greater than near \(1\)/);
+  assert.throws(() => shadowBiasPerSlope({ ...light, extent: 0 }, 2048), /extent must be greater than 0/);
+  assert.throws(() => shadowBiasPerSlope(light, 0), /shadowBiasPerSlope: mapSize/);
+  assert.ok(Number.isFinite(shadowBiasPerSlope(light, 2048)));
+});
+
 test('the default shadow eye sits along the sun direction', () => {
   for (const world of [false, true]) {
     for (const sun of [[-3, 6, 4], [0.85, 0.2, -0.25], [5, 5, 0]]) {
