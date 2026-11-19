@@ -60,6 +60,24 @@ test('parseCommandLine separates ids from flags and rejects unknown flags', () =
   assert.throws(() => parseCommandLine(['shot', 'home', '--out']), /needs a value/);
 });
 
+test('parseCommandLine rejects a value that is the next flag', () => {
+  for (const name of ['out', 'origin', 'width', 'height', 'surface', 'settle']) {
+    assert.throws(() => parseCommandLine(['shot', 'home', `--${name}`, '--full-page']), new RegExp(`--${name} needs a value`), name);
+  }
+});
+
+test('parseCommandLine rejects non-numeric and out-of-range numeric values', () => {
+  for (const name of ['width', 'height']) {
+    assert.throws(() => parseCommandLine(['shot', 'home', `--${name}`, 'abc']), /needs a number greater than 0/, name);
+    assert.throws(() => parseCommandLine(['shot', 'home', `--${name}`, '0']), /needs a number greater than 0/, name);
+    assert.throws(() => parseCommandLine(['shot', 'home', `--${name}`, '-5']), /needs a number greater than 0/, name);
+    assert.equal(parseCommandLine(['shot', 'home', `--${name}`, '800']).flags[name], '800');
+  }
+  assert.throws(() => parseCommandLine(['shot', 'home', '--settle', 'abc']), /needs a number of milliseconds/);
+  assert.throws(() => parseCommandLine(['shot', 'home', '--settle', '-1']), /needs a number of milliseconds/);
+  assert.equal(parseCommandLine(['shot', 'home', '--settle', '0']).flags.settle, '0');
+});
+
 test('the real FEATURES.md has unique ids and every page route points at a file', () => {
   const features = parseFeatures(readFileSync(new URL('../FEATURES.md', import.meta.url), 'utf8'));
   const ids = features.map(feature => feature.id);

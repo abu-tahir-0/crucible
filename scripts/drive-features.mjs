@@ -65,6 +65,18 @@ export function formatFeatureList(features, surface = null) {
 
 const VALUE_FLAGS = new Set(['out', 'origin', 'width', 'height', 'surface', 'settle']);
 const BOOLEAN_FLAGS = new Set(['no-gpu-lock', 'full-page']);
+const NUMBER_FLAGS = new Set(['width', 'height', 'settle']);
+
+function valueFor(name, value) {
+  if (value.startsWith('--')) throw new Error(`--${name} needs a value before the next flag.`);
+  if (NUMBER_FLAGS.has(name)) {
+    const number = Number(value);
+    if (value.trim() === '' || !Number.isFinite(number) || (name === 'settle' ? number < 0 : number <= 0)) {
+      throw new Error(`--${name} needs ${name === 'settle' ? 'a number of milliseconds that is 0 or more' : 'a number greater than 0'}, got "${value}".`);
+    }
+  }
+  return value;
+}
 
 export function parseCommandLine(argv) {
   const [command, ...rest] = argv;
@@ -82,7 +94,7 @@ export function parseCommandLine(argv) {
     } else if (VALUE_FLAGS.has(name)) {
       const value = rest[++index];
       if (value === undefined) throw new Error(`--${name} needs a value.`);
-      flags[name] = value;
+      flags[name] = valueFor(name, value);
     } else {
       throw new Error(`Unknown flag --${name}.`);
     }
