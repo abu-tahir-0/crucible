@@ -169,6 +169,8 @@ export function createParticleLaunches(settings) {
       position: Float64Array.from(origin),
       velocity: Float64Array.from(velocity),
       steps: new Int32Array(count),
+      // Whole steps integrated so far, re-steps after a seek included: a test reads it to see that playback continues.
+      stepsTaken: 0,
       resting: new Uint8Array(count),
       // Angle and rate of the spin: damped by contact, so it is stepped with the position.
       spin: Float64Array.from({ length: count * 2 }, (unused, slot) => slot % 2 ? spinRate[slot >> 1] : spinStart[slot >> 1]),
@@ -347,6 +349,7 @@ function trackedState(launches, index, forces, age, target) {
       launches.landing[index] = (track.steps[index] + 1) * stepSeconds;
     }
     track.steps[index]++;
+    track.stepsTaken++;
   }
   if (track.resting[index]) {
     track.steps[index] = wholeSteps;

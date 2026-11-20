@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { lstat, realpath } from 'node:fs/promises';
 import { isAbsolute, join, sep } from 'node:path';
-import { AUDIO_FILE_PATTERN } from '../src/agent-scene-capabilities.js';
+import { AUDIO_FILE_PATTERN, audioFileNameError } from '../src/agent-scene-capabilities.js';
 import { videoFrameCount } from '../src/film-timeline.js';
 
 // Audio for render jobs: local files in one configured folder, chosen by plain file name. The agent never supplies a
@@ -19,7 +19,7 @@ export function createAudioLibrary(root) {
   if (typeof root !== 'string' || !isAbsolute(root)) throw new TypeError('Audio root must be an explicit absolute directory path.');
   return Object.freeze({
     async resolve(file) {
-      if (typeof file !== 'string' || !AUDIO_FILE_PATTERN.test(file)) throw new TypeError('Audio file name is not allowed.');
+      if (typeof file !== 'string' || !AUDIO_FILE_PATTERN.test(file)) throw audioFileNameError(file);
       const path = join(root, file);
       const information = await lstat(path).catch(() => { throw new RangeError(`Audio file ${file} is not in the audio folder.`); });
       if (!information.isFile() || information.isSymbolicLink() || information.nlink > 1) throw new RangeError(`Audio file ${file} must be a regular file without links.`);

@@ -6,7 +6,7 @@ import { glslCommentStripperForVite } from '../scripts/strip-glsl-comments.mjs';
 import { cookOptionalForVite } from '../scripts/vite-cook-optional.mjs';
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
-export const MCP_BUILD_RUNNING = 'SIXTYSEVEN_MCP_BUILD_RUNNING';
+export const MCP_BUILD_RUNNING = 'CRUCIBLE_MCP_BUILD_RUNNING';
 
 // build/mcp/preview.js imports the hashed chunks of this build, and emptyOutDir deletes build/mcp, so a library build on its
 // own would leave the MCP server broken until someone reran build-mcp.mjs. Rebuild it after every build into build/.
@@ -135,7 +135,7 @@ export default defineConfig({
         'mcp/preview': 'scripts/agent-preview-browser.js',
       },
       formats: ['es'],
-      fileName: (_, entry) => entry === 'core' ? '67.module.js' : `${entry}.js`,
+      fileName: (_, entry) => entry === 'core' ? 'crucible.module.js' : `${entry}.js`,
     },
     minify: true,
   },

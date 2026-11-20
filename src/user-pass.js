@@ -10,7 +10,8 @@ import { MAXIMUM_MASK_OBJECTS, resolveObjectNames, objectIdentifierSlots, unbind
 // A snippet is checked by shader-snippet-validator.js before it is ever compiled.
 
 /** Names the engine provides to a snippet; a uniform cannot take one. */
-export const USER_PASS_INPUTS = Object.freeze(['sceneColor', 'sceneDepth', 'resolution', 'time', 'depthAt', 'worldPointAt', 'worldNormalAt', 'pixelFootprintAt', 'worldFootprintAt', 'bandLimitedLine', 'objectSlotAt', 'sceneObjectIds', 'userPass']);
+const ORIGIN = Object.freeze([0, 0, 0]);
+export const USER_PASS_INPUTS = Object.freeze(['sceneColor', 'sceneDepth', 'resolution', 'time', 'cameraEye', 'depthAt', 'worldPointAt', 'worldNormalAt', 'pixelFootprintAt', 'worldFootprintAt', 'bandLimitedLine', 'objectSlotAt', 'sceneObjectIds', 'userPass']);
 export const USER_PASS_SCALE = Object.freeze({ min: 0.05, max: 1 });
 const PASS_NAME_PATTERN = /^[a-z][A-Za-z0-9-]{0,31}$/;
 const PASS_FIELDS = ['name', 'fragment', 'uniforms', 'scale', 'objects'];
@@ -80,6 +81,7 @@ uniform sampler2D sceneDepth;
 uniform mat4 u67_inverseViewProjection;
 uniform vec2 resolution;
 uniform float time;
+uniform vec3 cameraEye;
 uniform sampler2D sceneObjectIds;
 uniform int u67_objectCount;
 uniform int u67_objectIds[${MAXIMUM_MASK_OBJECTS}];
@@ -256,7 +258,7 @@ export function installUserPasses(renderer) {
         throw compilationError(pass, error, built);
       }
       if (entry) releaseEntry(context, entry);
-      const names = ['sceneColor', 'sceneDepth', 'sceneObjectIds', 'u67_objectCount', 'u67_objectIds', 'u67_objectSlots', 'u67_inverseViewProjection', 'resolution', 'time', ...Object.keys(pass.uniforms)];
+      const names = ['sceneColor', 'sceneDepth', 'sceneObjectIds', 'u67_objectCount', 'u67_objectIds', 'u67_objectSlots', 'u67_inverseViewProjection', 'resolution', 'time', 'cameraEye', ...Object.keys(pass.uniforms)];
       state.entries[index] = {
         pass, source: built.source, program, target: null,
         locations: Object.fromEntries(names.map(name => [name, context.getUniformLocation(program, name)])),
@@ -300,6 +302,7 @@ export function installUserPasses(renderer) {
     context.uniformMatrix4fv(locations.u67_inverseViewProjection, false, renderer.inverseViewProjection);
     context.uniform2f(locations.resolution, width, height);
     context.uniform1f(locations.time, frame.passTime ?? frame.time ?? 0);
+    context.uniform3fv(locations.cameraEye, frame.eye ?? ORIGIN);
     for (const [name, uniform] of Object.entries(pass.uniforms)) setUniformValue(context, locations[name], uniform);
     const { identifiers, slots } = pass.objects ? objectIdentifierSlots(renderer, pass.objects) : { identifiers: [], slots: [] };
     context.uniform1i(locations.u67_objectCount, identifiers.length);

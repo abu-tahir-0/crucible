@@ -52,8 +52,24 @@ function watchPageProblems(page) {
   return problems;
 }
 
+// The tests import /src modules into a blank page of the dev server's origin. The home page would start the live hero, whose
+// world load keeps a software renderer (SwiftShader on CI) busy for minutes beside the code under test (#2684, #2686).
+export const BLANK_PAGE_PATH = '/__test-page.html';
+const BLANK_PAGE_HEADERS = {
+  'content-type': 'text/html; charset=utf-8',
+  'cross-origin-opener-policy': 'same-origin',
+  'cross-origin-embedder-policy': 'require-corp',
+};
+
+/** Opens a blank page of the dev server's origin, with its isolation headers, so `/src` modules import without the site's page scripts. */
+export async function openBlankPage(page, port) {
+  const address = `http://127.0.0.1:${port}${BLANK_PAGE_PATH}`;
+  await page.route(address, (route) => route.fulfill({ status: 200, headers: BLANK_PAGE_HEADERS, body: '<!doctype html><title>Test page</title>' }));
+  await page.goto(address);
+}
+
 /**
- * Runs `body(page)` on the dev server's page in headless Chrome and cleans up.
+ * Runs `body(page)` on a blank page of the dev server in headless Chrome and cleans up.
  * Where Chrome or playwright is missing the test skips on a developer machine and fails on CI, where Chrome is required.
  */
 export async function withDevServerPage(testContext, body) {
@@ -77,7 +93,7 @@ export async function withDevServerPage(testContext, body) {
     }
     const page = await browser.newPage({ viewport: { width: 128, height: 128 } });
     const pageProblems = watchPageProblems(page);
-    await page.goto(`http://127.0.0.1:${port}/`);
+    await openBlankPage(page, port);
     try {
       await body(page);
     } catch (error) {

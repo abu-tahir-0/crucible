@@ -25,7 +25,7 @@ export function devRelease({ packageJson, commit }) {
     commit,
     installCommand: `npm install crucible@npm:${name}@${version}`,
     tarball: `/releases/${name.replace(/^@/, '').replace('/', '-')}-${version}.tgz`,
-    module: `/releases/${version}/67.module.js`,
+    module: `/releases/${version}/crucible.module.js`,
     registryPublished: false,
     registryVersion: null,
     api: './docs.html#renderer-reference',

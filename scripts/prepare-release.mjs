@@ -36,12 +36,12 @@ const tarball = `/releases/${packed.filename}`;
 let archive = await readFile(resolve(releases, packed.filename));
 let integrity = `sha512-${createHash('sha512').update(archive).digest('base64')}`;
 await cp(resolve(root, 'build'), resolve(releases, metadata.version), { recursive: true });
-// The site keeps its old file name. The bytes must equal the npm file, so a CDN and the site serve the same module.
-const standaloneBytes = await readFile(resolve(root, 'build/67.standalone.js'));
-const siteModulePath = resolve(releases, metadata.version, '67.module.js');
+// The site copy must equal the npm file, so a CDN and the site serve the same module.
+const standaloneBytes = await readFile(resolve(root, 'build/crucible.standalone.js'));
+const siteModulePath = resolve(releases, metadata.version, 'crucible.module.js');
 await writeFile(siteModulePath, standaloneBytes);
 const sha512 = (bytes) => createHash('sha512').update(bytes).digest('hex');
-if (sha512(await readFile(siteModulePath)) !== sha512(standaloneBytes)) throw new Error('The site copy of the standalone module differs from build/67.standalone.js.');
+if (sha512(await readFile(siteModulePath)) !== sha512(standaloneBytes)) throw new Error('The site copy of the standalone module differs from build/crucible.standalone.js.');
 // The site shows pending change notes above the released sections. Nothing here is kept by hand.
 const changelogText = await readFile(resolve(root, 'CHANGELOG.md'), 'utf8');
 await writeFile(resolve(root, 'public/changelog.md'), await changelogWithUnreleased(changelogText));
@@ -89,7 +89,7 @@ const release = {
   commit,
   installCommand: registryPublished ? `npm install crucible@npm:${metadata.name}@${metadata.version}` : `npm install crucible@https://crucible.codepawl.com${tarball}`,
   tarball,
-  module: `/releases/${metadata.version}/67.module.js`,
+  module: `/releases/${metadata.version}/crucible.module.js`,
   registryPublished,
   registryVersion,
   integrity,

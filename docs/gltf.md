@@ -265,7 +265,7 @@ The Khronos KTX2 files hold no mip chain, so the 5.3x saving mixes the format (4
 `maxInstances` (default 65,536) caps the instances of one node, and `maxParts` still caps the total number of parts.
 Both are checked from the accessor counts before any data is decoded.
 The bridge does not import cameras or scene environments into CrucibleRenderer. The caller supplies its own camera and base lighting.
-Lights from `KHR_lights_punctual` come back in `asset.lights` and are applied only when the caller passes them on (see the extension table).
+Lights from `KHR_lights_punctual` come back in `asset.lights` and are applied only when the caller passes them on (see the extension table). A scene file (`scripts/render-media.mjs --scene file` and `scripts/render-file-native.mjs`) passes them on: the GLB's lights are its environment, and keys in the scene file's `renderer.environment` override them one by one.
 
 ## Verification
 

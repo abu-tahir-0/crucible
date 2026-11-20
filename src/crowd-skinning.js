@@ -205,29 +205,35 @@ export function bakeCrowdPalette(rig, poseAt, { duration, loop = true, frameRate
   return palette;
 }
 
+// Two passes over the skinned vertices, the box first and the radius around its centre second, so memory does not grow
+// with vertices times frames (#2377). Skinning is deterministic, so both passes see the same points.
 function measureCrowdBounds(rig, palette) {
   const minimum = [Infinity, Infinity, Infinity];
   const maximum = [-Infinity, -Infinity, -Infinity];
+  forEachSkinnedPoint(rig, palette, point => {
+    for (let axis = 0; axis < 3; axis++) {
+      minimum[axis] = Math.min(minimum[axis], point[axis]);
+      maximum[axis] = Math.max(maximum[axis], point[axis]);
+    }
+  });
+  const center = minimum.map((value, axis) => (value + maximum[axis]) / 2);
+  let radiusSquared = 0;
+  forEachSkinnedPoint(rig, palette, point => {
+    radiusSquared = Math.max(radiusSquared, (point[0] - center[0]) ** 2 + (point[1] - center[1]) ** 2 + (point[2] - center[2]) ** 2);
+  });
+  return Object.freeze({ center: Object.freeze(center), radius: Math.sqrt(radiusSquared) });
+}
+
+function forEachSkinnedPoint(rig, palette, visit) {
   const point = [0, 0, 0];
-  const points = [];
   for (const { geometry } of rig.parts) {
     for (let frame = 0; frame < palette.frameCount; frame++) {
       for (let vertex = 0; vertex < geometry.positions.length / 3; vertex++) {
         skinCrowdVertex(geometry, vertex, palette.data, frame * palette.jointCount, point);
-        points.push(point[0], point[1], point[2]);
-        for (let axis = 0; axis < 3; axis++) {
-          minimum[axis] = Math.min(minimum[axis], point[axis]);
-          maximum[axis] = Math.max(maximum[axis], point[axis]);
-        }
+        visit(point);
       }
     }
   }
-  const center = minimum.map((value, axis) => (value + maximum[axis]) / 2);
-  let radiusSquared = 0;
-  for (let index = 0; index < points.length; index += 3) {
-    radiusSquared = Math.max(radiusSquared, (points[index] - center[0]) ** 2 + (points[index + 1] - center[1]) ** 2 + (points[index + 2] - center[2]) ** 2);
-  }
-  return Object.freeze({ center: Object.freeze(center), radius: Math.sqrt(radiusSquared) });
 }
 
 /** The two frames and the blend between them for a clip time: [firstTexel, secondTexel, blend], as the shader reads them. */

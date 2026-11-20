@@ -56,6 +56,15 @@ function windShader(features) {
   return enabled.has('foliage') || enabled.has('grass') ? requireFeatureCode('worldMaterials').worldVertexWind : WIND_STUB;
 }
 
+// The instance normal matrix (9 floats) and the colour (3 floats) share three vec4 slots, 6 to 8, which leaves slot 9
+// free: with gl_InstanceID counted as an attribute on Safari the instanced program has to stay at 16 slots (#2042).
+const PACKED_COLOR_DECLARATION = `layout(location=8) in vec4 instanceNormalTail;
+#define instanceColor instanceNormalTail.yzw`;
+const PACKED_NORMAL_AND_COLOR_DECLARATIONS = `layout(location=6) in vec4 instanceNormalHead;
+layout(location=7) in vec4 instanceNormalMiddle;
+${PACKED_COLOR_DECLARATION}
+#define instanceNormal mat3(instanceNormalHead.xyz, vec3(instanceNormalHead.w, instanceNormalMiddle.xy), vec3(instanceNormalMiddle.zw, instanceNormalTail.x))`;
+
 function vertexShaderSource(definitions, features) {
   const retro = new Set(features).has('retro') ? requireFeatureCode('retro') : {};
   return `#version 300 es
@@ -64,8 +73,7 @@ precision highp float;
 layout(location=0) in vec3 position;
 layout(location=1) in vec3 normal;
 layout(location=2) in mat4 instanceMatrix;
-layout(location=6) in mat3 instanceNormal;
-layout(location=9) in vec3 instanceColor;
+${PACKED_NORMAL_AND_COLOR_DECLARATIONS}
 layout(location=10) in vec4 instanceSurface;
 layout(location=11) in vec3 assemblyOffset;
 layout(location=12) in vec3 assemblyDetailOffset;
@@ -206,7 +214,7 @@ export const depthVertexShader = createDepthVertexShader();
 
 // Tinted shadows: blended and transmissive casters leave the depth map and draw into a colour map of the light that passes
 // them (see docs/lighting.md). The same vertex and fragment program draws it, switched by the tintPass uniform.
-const TINT_VERTEX_DECLARATIONS = `layout(location=9) in vec3 instanceColor;
+const TINT_VERTEX_DECLARATIONS = `${PACKED_COLOR_DECLARATION}
 layout(location=15) in vec4 instanceEmissive;
 out vec3 tintColor;
 out float tintOpacity;
@@ -275,7 +283,7 @@ export const benchmarkVertexShader = `#version 300 es
 precision highp float;
 layout(location=0) in vec3 position;
 layout(location=2) in mat4 instanceMatrix;
-layout(location=9) in vec3 instanceColor;
+${PACKED_COLOR_DECLARATION}
 uniform mat4 viewProjection;
 out vec3 color;
 ${skinningShader([])}
@@ -725,7 +733,8 @@ vec3 sheenLayer(vec3 baseRadiance, vec3 normal, vec3 viewDirection, float visibi
 vec3 renderPassValue(vec3 color, vec3 normal, vec3 emission) {
   if (renderPassMode < 1.5) return clamp(color, 0.0, 1.0);
   if (renderPassMode < 2.5) return normal * 0.5 + 0.5;
-  if (renderPassMode < 3.5) return clamp(emission, 0.0, 1.0);
+  // A float target keeps the whole emission (the mask of a volume shadow reads it); an 8-bit target clamps it on write.
+  if (renderPassMode < 3.5) return emission;
   if (renderPassMode < 4.5) {
     float steps = floor(clamp(length(worldPosition - eye) / renderPassDepthRange, 0.0, 1.0) * 65535.0 + 0.5);
     float high = floor(steps / 256.0);

@@ -6,6 +6,8 @@ import { decodePfm, denoiseWithOidn, encodePfm, findOidnBinary } from '../packag
 import { PATH_TRACER_CAPABILITIES, PATH_TRACER_DENOISERS as JOB_DENOISERS } from '../src/path-tracer-capabilities.js';
 import { normalizePathTracerOptions, PATH_TRACER_DENOISERS, renderPathTracedImage } from '../src/path-tracer.js';
 import { chooseDenoiser } from '../scripts/agent-path-trace-denoise.mjs';
+import { budgetCandidates } from '../scripts/agent-render-budget.mjs';
+import { FINAL_TIER_RENDERER } from '../scripts/agent-render-quality.mjs';
 
 test('denoise takes a boolean or a name and keeps the boolean the tracer reports', () => {
   assert.equal(normalizePathTracerOptions({}).denoiser, 'wavelet');
@@ -44,7 +46,9 @@ test('a job that asks for oidn without the binary runs the wavelet filter and sa
   const choice = await chooseDenoiser('oidn');
   assert.equal(choice.denoise, 'wavelet');
   assert.match(choice.note, /oidn.*needs @codepawlhq\/crucible-denoise-oidn, and its binary.*npm install it.*fetch-oidn\.mjs.*wavelet filter ran instead/s);
-  assert.deepEqual(await chooseDenoiser(true), { denoise: true });
+  const defaultChoice = await chooseDenoiser(true);
+  assert.equal(defaultChoice.denoise, 'wavelet');
+  assert.match(defaultChoice.note, /denoise true uses OIDN.*npm install it.*wavelet filter ran instead/s);
   await assert.rejects(denoiseWithOidn({ width: 1, height: 1, color: new Float32Array(3), albedo: new Float32Array(3), normal: new Float32Array(3) }), /not installed/);
 });
 
@@ -77,30 +81,48 @@ test('the installed OIDN removes noise from a flat image and gives the same byte
   assert.deepEqual(first, second);
 });
 
-test('the native default (denoise true) picks OIDN when it is installed and the GPU a-trous filter with a note when it is not', async () => {
+test('denoise true picks OIDN on every backend when it is installed and says which filter ran when it is not', async () => {
   const installed = { findOidnBinary: () => 'oidn' };
-  const withOidn = await chooseDenoiser(true, { preferOidn: true, loadOidn: async () => installed });
-  assert.equal(withOidn.denoise, 'oidn');
-  assert.equal(withOidn.denoiser, installed);
-  assert.match(withOidn.note, /OIDN and the albedo and normal guides by default/);
-  const without = await chooseDenoiser(true, { preferOidn: true, loadOidn: async () => null });
-  assert.equal(without.denoise, 'atrous');
-  assert.match(without.note, /native backend denoises with OIDN.*GPU a-trous filter ran instead/s);
-  const explicit = await chooseDenoiser('oidn', { preferOidn: true, loadOidn: async () => null });
+  for (const native of [false, true]) {
+    const withOidn = await chooseDenoiser(true, { native, loadOidn: async () => installed });
+    assert.equal(withOidn.denoise, 'oidn');
+    assert.equal(withOidn.denoiser, installed);
+    assert.equal(withOidn.note, undefined, 'a filter that ran as asked is not a fallback, so it carries no note');
+  }
+  const withoutOnCpuOrGpu = await chooseDenoiser(true, { loadOidn: async () => null });
+  assert.equal(withoutOnCpuOrGpu.denoise, 'wavelet');
+  assert.match(withoutOnCpuOrGpu.note, /denoise true uses OIDN, which needs .*npm install it.*wavelet filter ran instead/s);
+  const withoutOnNative = await chooseDenoiser(true, { native: true, loadOidn: async () => null });
+  assert.equal(withoutOnNative.denoise, 'atrous');
+  assert.match(withoutOnNative.note, /GPU a-trous filter ran instead/);
+  const explicit = await chooseDenoiser('oidn', { native: true, loadOidn: async () => null });
   assert.equal(explicit.denoise, 'atrous');
   assert.match(explicit.note, /denoise "oidn".*GPU a-trous filter ran instead/s);
-  assert.match(explicit.note, /npm install it/);
-  const otherBackends = await chooseDenoiser(true, { loadOidn: async () => null });
-  assert.deepEqual(otherBackends, { denoise: true });
   assert.equal((await chooseDenoiser('oidn', { loadOidn: async () => null })).denoise, 'wavelet');
 });
 
-test('explicit denoise values keep their meaning on native and the other backends keep the plain default', async () => {
+test('the final tier keeps the wavelet filter when OIDN is missing, also on native', async () => {
+  const missing = await chooseDenoiser(FINAL_TIER_RENDERER.denoise, { native: true, keepWavelet: true, loadOidn: async () => null });
+  assert.equal(missing.denoise, 'wavelet');
+  assert.match(missing.note, /wavelet filter ran instead/);
+  const installed = { findOidnBinary: () => 'oidn' };
+  assert.equal((await chooseDenoiser(FINAL_TIER_RENDERER.denoise, { native: true, keepWavelet: true, loadOidn: async () => installed })).denoise, 'oidn');
+});
+
+test('the final tier and every budget path tracer candidate ask for denoise true, which means OIDN when installed', () => {
+  assert.equal(FINAL_TIER_RENDERER.denoise, true);
+  const candidates = budgetCandidates({ kind: 'image', width: 640, height: 360 }, 'gpu').filter(candidate => candidate.tier === 'final');
+  assert.ok(candidates.length > 0);
+  for (const candidate of candidates) assert.equal(candidate.settings.renderer.denoise, true);
+});
+
+test('explicit denoise values keep their meaning on every backend and never load OIDN', async () => {
   const loadOidn = async () => { throw new Error('must not load OIDN'); };
-  assert.deepEqual(await chooseDenoiser(false, { preferOidn: true, loadOidn }), { denoise: false });
-  assert.deepEqual(await chooseDenoiser('wavelet', { preferOidn: true, loadOidn }), { denoise: 'wavelet' });
-  assert.deepEqual(await chooseDenoiser('none', { preferOidn: true, loadOidn }), { denoise: 'none' });
-  assert.deepEqual(await chooseDenoiser(true, { loadOidn }), { denoise: true });
+  for (const native of [false, true]) {
+    assert.deepEqual(await chooseDenoiser(false, { native, loadOidn }), { denoise: false });
+    assert.deepEqual(await chooseDenoiser('wavelet', { native, loadOidn }), { denoise: 'wavelet' });
+    assert.deepEqual(await chooseDenoiser('none', { native, loadOidn }), { denoise: 'none' });
+  }
 });
 
 test('a source checkout finds the fetched OIDN package without it being installed under node_modules', { skip: findOidnBinary() ? false : 'the oidnDenoise binary is not fetched' }, async () => {
@@ -111,7 +133,8 @@ test('a source checkout finds the fetched OIDN package without it being installe
 
 test('the job capability text says how to install the OIDN package from npm and what runs without it', () => {
   const { setting } = PATH_TRACER_CAPABILITIES;
-  assert.match(setting, /@codepawlhq\/crucible-denoise-oidn \(npm install it/);
+  assert.match(setting, /denoise true \(the default\) and "oidn" use OIDN when @codepawlhq\/crucible-denoise-oidn is installed \(npm install it/);
+  assert.match(setting, /final quality tier/);
   assert.match(setting, /fetch-oidn\.mjs/);
   assert.match(setting, /wavelet filter.*denoiserNote/s);
 });

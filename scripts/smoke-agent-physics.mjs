@@ -54,7 +54,7 @@ const recipe = {
 try {
   await client.connect(transport);
   const capabilities = (await call('scene_capabilities', { topic: 'physics' })).structuredContent;
-  assert.deepEqual(capabilities.notes.shapes, ['box', 'ball', 'capsule', 'convex', 'trimesh']);
+  assert.deepEqual(capabilities.notes.shapes, ['box', 'ball', 'capsule', 'cylinder', 'cone', 'convex', 'trimesh', 'compound']);
   const created = (await call('scene_create', { recipe }, 180000)).structuredContent;
   const sessionId = created.sessionId;
   const report = (await call('scene_inspect', { sessionId })).structuredContent.physics;

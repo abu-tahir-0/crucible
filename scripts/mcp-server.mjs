@@ -1,5 +1,9 @@
 import { answerCapabilities, MAX_TOPICS_PER_CALL } from './capabilities-topics.mjs';
 import { MOTION_TRACK_KIND_NAMES } from '../src/motion-track-kinds.js';
+import { CONSTRAINT_TYPE_NAMES } from '../src/motion-constraint-types.js';
+import { DRIVER_VARIABLE_KIND_NAMES } from '../src/motion-driver-variable-kinds.js';
+import { IK_SOLVER_TYPE_NAMES } from '../src/motion-ik-solver-types.js';
+import { MOTION_PROPERTY_KIND_NAMES } from '../src/motion-property-kinds.js';
 import { BRANCH_NAME_PATTERN } from '../src/agent-branches.js';
 import { TEXTURE_SEQUENCE_LIMITS } from '../src/texture-sequence-limits.js';
 import { readEnvironmentVariable } from '../src/environment-variable.js';
@@ -18,7 +22,7 @@ import { MESH_EDIT_OPERATIONS, MODIFIER_OPERATIONS } from '../src/mesh-operation
 import { VIEW_TRANSFORM_NAMES, LOOK_NAMES } from '../src/view-transform-names.js';
 import { BUNDLED_ENVIRONMENT_NAMES, BUNDLED_CUBE_LOOK_NAMES, CATALOG_FILE_ID } from '../src/look-catalog.js';
 import { describeReceived } from '../src/field-error.js';
-import { MATERIAL_PATTERN_TYPES, MATERIAL_MAPPINGS, LIGHTING_SETUP_NAMES, RENDER_PASS_NAMES, RENDER_OUTPUT_FORMATS, MAXIMUM_JOB_FPS, VIDEO_ENCODERS, MAXIMUM_JOB_SIDE, maximumMemoryMiB, memoryRangeError, MAXIMUM_STILLS_FRAMES, RECIPE_ALPHA_MODES } from '../src/agent-scene-capabilities.js';
+import { MATERIAL_PATTERN_TYPES, MATERIAL_MAPPINGS, LIGHTING_SETUP_NAMES, RENDER_PASS_NAMES, RENDER_OUTPUT_FORMATS, MAXIMUM_JOB_FPS, VIDEO_ENCODERS, MAXIMUM_JOB_SIDE, maximumMemoryMiB, memoryRangeError, MAXIMUM_STILLS_FRAMES, RECIPE_ALPHA_MODES, PHYSICS_BODY_SHAPES } from '../src/agent-scene-capabilities.js';
 import { MATERIAL_LAYER_SCALAR_RANGES, MATERIAL_LAYER_COLOR_RANGES, TOON_COLOR_MAXIMUM } from '../src/material-layers.js';
 import { SUBSURFACE_RANGES } from '../src/subsurface-limits.js';
 import { responseFormatField, chosenFormat, conciseReview, conciseJobStatus, conciseJobResult, conciseCapabilities } from './mcp-response-format.mjs';
@@ -29,16 +33,9 @@ import { installVolumeGridFiles } from '../src/mcp-volume-grids.js';
 import { setExplosionBakeStore } from '../src/explosion-grids.js';
 import { bakeCacheDirectory, createExplosionBakeCache } from '../src/explosion-bake-cache.js';
 import { MAX_POINT_LIGHTS, MAX_SPOT_LIGHTS, MAX_AREA_LIGHTS } from '../src/light-limits.js';
-import { currentFormatName, warnLegacyOnce } from '../src/legacy-names.js';
 import { annotateViewHtml, clientSupportsMcpApps, ANNOTATE_VIEW_URI, MCP_APPS_MIME_TYPE } from './annotate-app-view.mjs';
 import { loadAskUserFixture, describeAskUserFixture } from './ask-user-fixture.mjs';
 import { MCP_OPTION_NAMES, mcpOptionSummary } from '../bin/crucible-mcp-flags.mjs';
-
-function acceptLegacyFormat(value) {
-  const current = currentFormatName(value);
-  if (current !== value) warnLegacyOnce(`recipe format "${value}" is now "${current}"; the old name stops working in the next release.`);
-  return current;
-}
 
 describeSchemaInputsWithReceivedValues();
 
@@ -599,14 +596,30 @@ const axisNames = z.array(axisName).min(1).max(3);
 const signedAxis = z.enum(['+x', '-x', '+y', '-y', '+z', '-z']);
 const constraintSpace = z.enum(['world', 'local']).optional();
 const limitRange = z.tuple([z.number().min(-1e6).max(1e6), z.number().min(-1e6).max(1e6)]).optional();
+// One entry per kind of DRIVER_VARIABLE_KIND_NAMES, so a kind the backend gains fails here until it has a shape.
+const driverVariableShapes = {
+  custom: z.strictObject({ node: identifier, name: z.string().max(64), component: axisName.optional() }),
+  distance: z.strictObject({ from: identifier, to: identifier }),
+  rotationDifference: z.strictObject({ from: identifier, to: identifier }),
+};
+function driverVariableSchemas() {
+  return DRIVER_VARIABLE_KIND_NAMES.map(kind => {
+    if (!driverVariableShapes[kind]) throw new Error('Driver variable kind without a schema: ' + kind);
+    return z.strictObject({ [kind]: driverVariableShapes[kind] });
+  });
+}
 // A bounded expression: data only, never code. See docs/agent-motion.md for the operators.
 const expression = z.lazy(() => z.union([
   z.number().min(-1e6).max(1e6),
   z.literal('time'),
   z.strictObject({ node: identifier, property: z.enum(['translation', 'rotation', 'scale']), component: axisName, space: z.enum(['local', 'world']).optional() }),
+  ...driverVariableSchemas(),
   z.record(z.string().max(24), z.union([z.array(expression).min(1).max(8), expression])),
 ])).describe('Number, "time", {"node","property","component","space"} read, or an operator like {"mul":[2,"time"]}, {"neg":x} too. Operators as in field expressions (scene_capabilities), no vectors, attributes or noise. At most 64 parts, 8 deep.').meta({ id: 'Expression' });
 const influence = z.union([unit, expression]).optional().describe('0 to 1 blend of the constraint, or an expression.');
+// Types without a schema of their own here; the backend checks their fields.
+const describedConstraintTypes = ['copy_location', 'copy_rotation', 'copy_scale', 'limit_location', 'limit_rotation', 'track_to', 'child_of'];
+const otherConstraintTypes = CONSTRAINT_TYPE_NAMES.filter(type => !describedConstraintTypes.includes(type));
 const constraint = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('copy_location'), node: identifier, target: identifier, axes: axisNames.optional(), invert: axisNames.optional(), offset: z.boolean().optional(), space: constraintSpace, influence }),
   z.strictObject({ type: z.literal('copy_rotation'), node: identifier, target: identifier, axes: axisNames.optional(), invert: axisNames.optional(), mix: z.enum(['replace', 'add']).optional(), space: constraintSpace, influence }),
@@ -615,8 +628,18 @@ const constraint = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('limit_rotation'), node: identifier, x: degreeRange.optional(), y: degreeRange.optional(), z: degreeRange.optional(), space: constraintSpace, influence }),
   z.strictObject({ type: z.literal('track_to'), node: identifier, target: identifier, trackAxis: signedAxis.optional(), upAxis: axisName.optional(), worldUp: vector3.optional(), influence }),
   z.strictObject({ type: z.literal('child_of'), node: identifier, target: identifier, inverse: z.enum(['rest', 'none']).optional(), influence }),
-  z.strictObject({ type: z.enum(['floor', 'copy_transforms', 'limit_distance', 'limit_scale', 'stretch_to', 'locked_track', 'transformation', 'action']), node: identifier, target: identifier.optional(), axis: signedAxis.optional(), offset: z.number().min(-1e6).max(1e6).optional(), influence, args: z.record(z.string(), z.unknown()).optional() }),
+  z.looseObject({ type: z.enum(otherConstraintTypes), node: identifier, influence }).describe('The other constraint types take their fields flat beside type and node: scene_capabilities motionConstraints lists the fields of each type, and the backend names a wrong one.'),
 ]);
+const propertyValue = z.union([finite, vector3]);
+const motionProperty = z.strictObject({
+  node: identifier,
+  name: z.string().min(1).max(64),
+  kind: z.enum(MOTION_PROPERTY_KIND_NAMES).optional().describe('number (default), vector or color.'),
+  value: propertyValue.optional().describe('Constant value; leave out when keys are given.'),
+  min: finite.optional(),
+  max: finite.optional(),
+  keys: z.array(z.strictObject({ time: z.number().min(0).max(30), value: propertyValue })).min(1).max(16).optional().describe('Linear keys with rising times.'),
+});
 const driver = z.strictObject({
   target: z.union([
     z.strictObject({ kind: z.literal('node'), id: identifier, property: z.enum(['translation', 'rotation', 'scale']), component: axisName }),
@@ -627,6 +650,7 @@ const driver = z.strictObject({
   ]),
   expression,
 });
+const otherIkSolverTypes = IK_SOLVER_TYPE_NAMES.filter(type => type !== 'two-bone' && type !== 'aim');
 const ikSolver = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('two-bone'),
@@ -648,6 +672,7 @@ const ikSolver = z.discriminatedUnion('type', [
     maxAngle: z.number().min(0.001).max(180).optional().describe('Limits the whole turn, in degrees.'),
     weight: ikWeight,
   }).describe('Point a node, such as a head, lamp or camera, at a target.'),
+  z.looseObject({ type: z.enum(otherIkSolverTypes), weight: ikWeight }).describe('A chain of any length (type chain: chain or root and end, target, pole, stretch, iterations, limits) or a chain along a curve (type spline: chain or root and end, curve, stretch). Fields are flat beside type: scene_capabilities motionIk lists them.'),
 ]);
 // Properties of the tracks the schema accepts; light, sun, environment and effects take any property name here and the backend checks it.
 const motionTrackProperties = {
@@ -680,6 +705,7 @@ const motion = z.strictObject({
   springs: z.record(z.string(), z.unknown()).optional().describe('Spring bones for hair, tails and soft parts, VRM model: { chains: [{ bones, stiffness, dragForce, gravityPower, gravityDir, hitRadius, colliders }], colliders: [{ id, bone, type, offset, radius }] }. scene_capabilities springBones has the ranges.'),
   constraints: z.array(constraint).max(32).optional().describe('Blender-style node constraints, run in order after the tracks, drivers and IK, each on the pose the one before left: copy_location, copy_rotation, copy_scale, limit_location, limit_rotation, track_to, child_of, floor. Euler angles are XYZ in degrees; space defaults to world. Same result at any time, so seeking equals playing.'),
   drivers: z.array(driver).max(32).optional().describe('Drive one node component or material property from a bounded expression over time and other nodes\' values. A driven property cannot also have a track.'),
+  properties: z.array(motionProperty).max(32).optional().describe('Custom properties on nodes: named values, constant or keyed, that driver expressions and constraint influence read with {"custom":{"node","name"}}. A property holds one number, vector or colour inside its min and max.'),
   loop: z.boolean().optional(),
   tracks: z.array(z.union([
     motionTrack('node', 'translation', vector3, vector3),
@@ -699,10 +725,19 @@ const motion = z.strictObject({
     lookTrack,
   ], { error: motionTrackUnionMessage })).max(128).optional().describe('Keyframe tracks; leave out for a motion made only of drivers, ik or constraints.'),
 }).describe('One absolute-time procedural clip. Local node transforms propagate through parents. Cubic tangents are derivatives per second. Backend checks references, duplicate tracks, 2048 total keys and every sampled pose.');
+const physicsCompoundPart = z.strictObject({
+  shape: z.enum(['box', 'ball', 'capsule', 'cylinder', 'cone']),
+  translation: vector3.optional().describe('Part centre in body space.'),
+  rotation: quaternion.optional().describe('Part rotation in body space.'),
+  halfExtents: z.tuple([positive, positive, positive]).optional().describe('Box parts only.'),
+  radius: positive.optional().describe('Ball, capsule, cylinder and cone parts.'),
+  halfHeight: positive.optional().describe('Capsule, cylinder and cone parts, along local Y.'),
+});
 const physicsBody = z.strictObject({
   node: identifier.describe('Root node with a geometry; the collider is fitted to it and the body drives its pose.'),
   type: z.enum(['dynamic', 'fixed', 'kinematic']).optional().describe('Defaults to dynamic.'),
-  shape: z.enum(['box', 'ball', 'capsule', 'convex', 'trimesh']).optional().describe('Defaults: box for dynamic and sensors, trimesh for fixed. Trimesh (at most 20000 triangles) needs a fixed or kinematic body; convex takes at most 2048 distinct vertices.'),
+  shape: z.enum(PHYSICS_BODY_SHAPES).optional().describe('Defaults: box for dynamic and sensors, trimesh for fixed. Cylinder and cone fit the geometry bounds along local Y. Trimesh (at most 20000 triangles) needs a fixed or kinematic body; convex takes at most 2048 distinct vertices; compound needs shapes.'),
+  shapes: z.array(physicsCompoundPart).max(16).optional().describe('Only with shape compound: 1-16 sub-colliders, each { shape box|ball|capsule|cylinder|cone, translation, rotation, halfExtents or radius and halfHeight }.'),
   mass: positive.optional().describe('Kilograms; mass or density, not both.'),
   density: positive.optional().describe('Defaults to 1.'),
   friction: nonnegative.optional(),
@@ -796,7 +831,7 @@ const clothListed = listed('cloth', cloth, 'Baked cloth sheets: duration, gravit
 const armatureListed = listed('armatures', armature, 'A skeleton { id, parent, preset humanoid|quadruped, fit, bones [{name, parent, head, tail}], prefix, translation, rotation }; see scene_capabilities armatures.', { id: identifier });
 const gameReference = z.record(z.string(), z.unknown()).describe('Playable setup as plain JSON, never code: {player:{node}, camera, input, physics, ground, rules}. Fields and an example: scene_capabilities game.');
 const recipe = z.strictObject({
-  format: z.preprocess(acceptLegacyFormat, z.literal('crucible.scene')),
+  format: z.literal('crucible.scene'),
   schemaVersion: z.literal(1),
   geometries: z.array(geometryListed).max(256).optional(),
   materials: z.array(materialListed(z.strictObject({ id: identifier, tag: materialTag, ...materialFields }), 'Material.', { id: identifier })).max(256).optional().describe('Omit for none.'),
@@ -816,7 +851,7 @@ const recipe = z.strictObject({
   game: gameReference.nullable().optional(),
 }).describe('Bounded scene recipe; the backend validates it.');
 const assetRecipe = z.strictObject({
-  format: z.preprocess(acceptLegacyFormat, z.literal('crucible.asset')),
+  format: z.literal('crucible.asset'),
   schemaVersion: z.literal(1),
   assetId: z.string().regex(/^[a-f0-9]{64}$/).optional().describe('SHA-256 asset ID from scene_asset_catalog, or assetName.'),
   assetName: z.string().max(256).optional(),
@@ -846,7 +881,7 @@ const nodeOperations = (nodeFieldShape, nodeSchema) => [
 ];
 const otherOperations = [
   materialListed(z.strictObject({ type: z.literal('set-material'), id: identifier, ...materialFields }, { error: flatFieldsHint('set-material', 'material') }), 'Change a material.', { type: z.literal('set-material'), id: identifier }),
-  z.strictObject({ type: z.literal('set-camera'), ...cameraFields }),
+  z.strictObject({ type: z.literal('set-camera'), ...cameraFields, fStop: cameraFields.fStop.nullable().optional(), focusDistance: positive.nullable().optional() }),
   z.strictObject({ type: z.literal('set-motion'), motion: recipeMotionReference.nullable().optional(), removeTracks: z.array(z.record(z.string(), z.string())).min(1).max(64).optional().describe('Instead of motion: selectors { kind, id, property } of tracks to drop.') })
     .refine(operationBody => (operationBody.motion !== undefined) !== (operationBody.removeTracks !== undefined), { message: 'set-motion takes one of motion or removeTracks.' }),
   z.strictObject({ type: z.literal('bake-motion'), nodes: z.array(identifier).min(1).max(32), start: nonnegative.optional(), end: nonnegative.optional(), step: positive.optional(), tolerance: z.record(z.string(), z.number()).optional() }),
@@ -928,7 +963,7 @@ const renderSettings = z.strictObject({
   quality: z.enum(['draft', 'realtime', 'realtime-high', 'final']).optional().describe('What the render is for; picks the renderer. Not with renderer or budget. scene_capabilities jobs.'),
   budget: z.strictObject({ secondsPerFrame: z.number().optional(), framesPerSecond: z.number().optional(), memoryMiB: z.number().optional() }).optional().describe('Pick renderer, samples and size to fit; not with renderer. scene_capabilities jobs.'),
   timeline: z.strictObject({ start: z.number().min(0).max(60).optional() }).optional().describe('Play the recipe timeline from start (default 0); it owns the motion clock, so leave motion and animation out.'),
-  audio: z.strictObject({ file: z.string().max(68), offset: z.number().min(0).max(3600).optional(), track: z.enum(['aac', 'pcm']).optional() }).optional().describe('Video only: a file in the --audio folder, mixed in from offset seconds.'),
+  audio: z.strictObject({ file: z.string().max(68), offset: z.number().min(0).max(3600).optional(), track: z.enum(['aac', 'pcm']).optional() }).optional().describe('Video only: a file in the --audio folder (a-z A-Z 0-9 . _ -; .wav .mp3 .ogg .flac), mixed in from offset seconds.'),
   encoder: z.enum(VIDEO_ENCODERS).optional().describe('Video only: cpu (default) or nvenc.'),
   passes: z.array(z.enum(RENDER_PASS_NAMES)).min(1).max(RENDER_PASS_NAMES.length).optional().describe('image and stills: also write a raw PNG per pass; opaque geometry only.'),
   mattes: z.array(z.strictObject({ object: z.string().max(120).optional(), material: z.string().max(120).optional() })).max(8).optional().describe('One ID matte PNG per part or material; see jobs.'),
@@ -1137,7 +1172,7 @@ export function createAgentMcpServer(runtime, { version = packageMetadata.versio
     submitAskUserTool.enable();
     askUserTool.update({ _meta: { ui: { resourceUri: ANNOTATE_VIEW_URI } } });
   };
-  register('scene_review', 'Compare one to four independent camera or motion samples in one labeled PNG grid. Preserves source revision, transient pose, viewport and checkpoints. Omitted motionTime restores authored base pose; omitted animation uses the authored asset clip pose; rendererTime defaults to zero. No render job store is required.', z.strictObject({
+  register('scene_review', 'Compare one to four independent camera or motion samples in one labeled PNG grid. Preserves source revision, transient pose, viewport and checkpoints. Omitted motionTime restores authored base pose; omitted animation uses the authored asset clip pose; rendererTime defaults to the shot motionTime (or animation time), else zero. No render job store is required.', z.strictObject({
     ...sessionFields, expectedRevision,
     width: z.number().int().min(64).max(480).default(384),
     height: z.number().int().min(64).max(480).default(384),
@@ -1160,7 +1195,7 @@ export function createAgentMcpServer(runtime, { version = packageMetadata.versio
   register('scene_restore', 'Restore a checkpoint atomically using the current revision. The checkpoint remains available and revision increments. Pass exactly one of checkpointId, revision or branch. With revision (last 4 kept), undo with no checkpoint. With branch, keep that branch (one revision) and drop all branches.', z.strictObject({ ...sessionFields, checkpointId: restoreCheckpointId, revision: z.number().int().min(0).optional(), ...restoreBranchField, expectedRevision }), edit, async argumentsValue => jsonResult(await runtime.restore(argumentsValue)));
   register('scene_release_checkpoint', 'Release one checkpoint slot. Released or foreign checkpoints fail.', z.strictObject(checkpointFields), destroy, async argumentsValue => jsonResult(await runtime.releaseCheckpoint(argumentsValue)));
   register('scene_export_recipe', 'Read a detached canonical JSON recipe for reproduction.', z.strictObject(sessionFields), readOnly, async argumentsValue => jsonResult(await runtime.exportRecipe(argumentsValue)));
-  register('scene_export_glb', 'Write the active scene as a GLB file in the configured jobs folder, under a server-chosen name (the result has the path, byte count and SHA-256). Needs --jobs. Exports the current pose with pattern and imported textures, skins, morph weights and IK as posed; motionTime seeks authored motion first. For an imported asset, clip adds that source clip (translation, rotation, scale and morph weight tracks) on the source skeleton, which needs no animation, node overrides or motion in the scene. At most eight files are kept, oldest removed first; the GLB is at most 32 MiB.', z.strictObject({ ...sessionFields, clip: z.union([z.number().int().min(0).max(255), z.string().min(1).max(256)]).optional().describe('Imported assets only: source clip index or name, as scene_asset_catalog lists.'), motionTime: z.number().min(0).max(3600).optional().describe('Seek authored motion (and IK) to this time before exporting. Leaves the preview there, like scene_look.'), maxTextureSize: z.number().int().min(1).max(4096).optional().describe('Largest texture side in pixels. Defaults to 2048.') }), edit, async argumentsValue => jsonResult(await runtime.exportGlb(argumentsValue)));
+  register('scene_export_glb', 'Write the active scene as a GLB file in the configured jobs folder, under a server-chosen name (the result has the path, byte count and SHA-256). Needs --jobs. Exports the current pose with pattern and imported textures, skins, morph weights and IK as posed; omitted lists what it left out (topic export); motionTime seeks authored motion first. For an imported asset, clip adds that source clip (translation, rotation, scale and morph weight tracks) on the source skeleton, which needs no animation, node overrides or motion in the scene. At most eight files are kept, oldest removed first; the GLB is at most 32 MiB.', z.strictObject({ ...sessionFields, clip: z.union([z.number().int().min(0).max(255), z.string().min(1).max(256)]).optional().describe('Imported assets only: source clip index or name, as scene_asset_catalog lists.'), motionTime: z.number().min(0).max(3600).optional().describe('Seek authored motion (and IK) to this time before exporting. Leaves the preview there, like scene_look.'), maxTextureSize: z.number().int().min(1).max(4096).optional().describe('Largest texture side in pixels. Defaults to 2048.') }), edit, async argumentsValue => jsonResult(await runtime.exportGlb(argumentsValue)));
   register('scene_export_web', 'Write the scene with its game as a static web build in the jobs folder: index.html, game.json and engine/, which any static host serves with no server code. Needs --jobs and a game set with set-game. Procedural scenes only; the newest four builds are kept. review: true writes a page of the current view for a person to pin on a phone instead (no game); read its saved file with scene_ask_user reviewFile.', z.strictObject({ ...sessionFields, title: z.string().max(64).optional().describe('Page title.'), review: z.boolean().optional() }), edit, async argumentsValue => jsonResult(await runtime.exportWeb(argumentsValue)));
   register('scene_dispose', 'Dispose the active scene and its checkpoints, releasing renderer resources.', z.strictObject(sessionFields), destroy, async argumentsValue => jsonResult(await runtime.dispose(argumentsValue)));
   register('scene_render_submit', 'Start one asynchronous snapshot job in the configured private job store. Requires the current revision. Temporarily leases the preview renderer; does not change source revision or checkpoints.', z.strictObject({ ...sessionFields, expectedRevision, settings: renderSettings }), { ...edit, destructiveHint: false }, async argumentsValue => jsonResult(await runtime.submitJob(argumentsValue)));

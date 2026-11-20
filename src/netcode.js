@@ -743,8 +743,10 @@ function createClient(settings, stats) {
   }
 
   // Moves the drawing clock on with real time, nudged by at most a tenth toward "newest snapshot minus the delay".
+  // A frame time that is not a finite, non-negative number (a bad timer reading) is skipped, so the clock never turns NaN.
   function advanceRenderTime(deltaSeconds) {
     if (renderTime === null) return;
+    if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) return;
     const target = latestTick * stepSeconds - settings.interpolationDelaySeconds;
     const error = target - renderTime;
     if (Math.abs(error) > 1) {
@@ -887,6 +889,11 @@ function createPeerSide(settings, stats) {
     const present = new Set(transport.peers());
     for (const [id, entity] of entities) {
       if (!isLocal(entity) && !present.has(entity.owner)) entities.delete(id);
+    }
+    // The sender table keeps a record per peer ever heard: a peer that left frees its slot, so a room with reloads or random
+    // ids does not fill all 32 slots and reject every newcomer.
+    for (const peerId of senders.keys()) {
+      if (!present.has(peerId)) senders.delete(peerId);
     }
   }
 

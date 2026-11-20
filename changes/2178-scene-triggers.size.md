@@ -1,0 +1,1 @@
+- entry:crucible-scene: +2.5 KB gzip for the scroll, hover-tilt and view attributes, which let a page move the camera with no script of its own and draw frames only while the camera moves.

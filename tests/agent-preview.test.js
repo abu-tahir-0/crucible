@@ -232,6 +232,65 @@ test('a frame at a motion time gives the renderer that time as the post pass clo
   assert.deepEqual(renders.slice(1).map(frame => frame.camera.passTime), [2, 6.5, 0, undefined]);
 });
 
+function rolledTrackRecipe() {
+  return { ...recipe(), camera: { eye: [10, 5, 10], target: [0, 2, 0], fov: 40 },
+    motion: { duration: 4, tracks: [
+      { kind: 'camera', property: 'eye', keyframes: [{ time: 0, value: [10, 5, 10] }, { time: 4, value: [-10, 5, 10] }] },
+      { kind: 'camera', property: 'roll', keyframes: [{ time: 0, value: 0 }, { time: 4, value: 0.28 }] },
+    ] } };
+}
+
+test('a review shot draws the same track camera, roll included, as a look and a render job at that time', () => {
+  const harness = previewHarness();
+  const sessionId = 'review-roll';
+  harness.preview.create({ recipe: rolledTrackRecipe(), sessionId, backend: 'cpu', memoryBudgetMiB: 64 });
+  harness.preview.frame({ sessionId, motionTime: 2 });
+  const rendered = harness.renders.at(-1).camera;
+  harness.preview.reviewBegin({ sessionId, width: 768, height: 408 });
+  const reviewed = harness.preview.reviewShot({ sessionId, index: 0, width: 384, height: 384, columns: 2,
+    shot: { label: 'Roll', motionTime: 2, rendererTime: 0 } });
+  const drawn = harness.renders.at(-1).camera;
+  assert.deepEqual(drawn.eye, rendered.eye);
+  assert.deepEqual(drawn.up, rendered.up);
+  assert.deepEqual(reviewed.camera.up, rendered.up);
+  assert.ok(Math.abs(drawn.up[0] - 0.1337) < 1e-3, `a roll of 0.14 radians tilts up by sin 0.14, got ${drawn.up}`);
+});
+
+test('a review shot passes projection and orthoScale through to the drawn camera', () => {
+  const harness = previewHarness();
+  const sessionId = 'review-ortho';
+  harness.preview.create({ recipe: recipe(), sessionId, backend: 'cpu', memoryBudgetMiB: 64 });
+  harness.preview.reviewBegin({ sessionId, width: 768, height: 408 });
+  const reviewed = harness.preview.reviewShot({ sessionId, index: 0, width: 384, height: 384, columns: 2,
+    shot: { label: 'Ortho', motionTime: null, rendererTime: 0, camera: { projection: 'orthographic', orthoScale: 8 } } });
+  assert.equal(reviewed.camera.projection, 'orthographic');
+  assert.equal(reviewed.camera.orthoScale, 8);
+  assert.equal(harness.renders.at(-1).camera.projection, 'orthographic');
+  assert.equal(harness.renders.at(-1).camera.orthoScale, 8);
+});
+
+test('a review shot at a motion time gives the post pass the same clock as a frame at that time', () => {
+  const { preview, renders } = previewHarness();
+  const sessionId = 'review-pass-clock';
+  const input = recipe();
+  input.motion = { duration: 8, tracks: [{ kind: 'node', id: 'cube', property: 'translation',
+    keyframes: [{ time: 0, value: [0, 0, 0] }, { time: 8, value: [4, 0, 0] }] }] };
+  preview.create({ recipe: input, sessionId, backend: 'cpu', memoryBudgetMiB: 192 });
+  preview.reviewBegin({ sessionId, width: 768, height: 408 });
+  const reviewClocks = [];
+  const frameClocks = [];
+  for (const [index, motionTime] of [5.65, 2].entries()) {
+    preview.reviewShot({ sessionId, index, width: 384, height: 384, columns: 2, shot: { label: `t${motionTime}`, motionTime } });
+    reviewClocks.push({ passTime: renders.at(-1).camera.passTime, anchorX: renders.at(-1).parts[0].matrix[12] });
+    preview.frame({ sessionId, motionTime });
+    frameClocks.push({ passTime: renders.at(-1).camera.passTime, anchorX: renders.at(-1).parts[0].matrix[12] });
+  }
+  assert.deepEqual(reviewClocks, frameClocks);
+  assert.equal(reviewClocks[0].passTime, 5.65);
+  preview.reviewShot({ sessionId, index: 0, width: 384, height: 384, columns: 2, shot: { label: 'base', motionTime: null } });
+  assert.equal(renders.at(-1).camera.passTime, undefined);
+});
+
 test('a look at a motion time gives the post pass the same clock as a frame at that time', () => {
   const { preview, renders } = previewHarness();
   const sessionId = 'look-pass-clock';

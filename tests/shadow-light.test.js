@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fitWorldShadowView, resolveShadowLight, shadowBiasPerSlope } from '../src/shadow-light.js';
+import { fitWorldShadowView, resolveShadowLight, shadowBiasPerSlope, sunShadowMapSize } from '../src/shadow-light.js';
 import { CrucibleRenderer } from '../src/renderer.js';
 
 function directionBetween(light) {
@@ -111,4 +111,25 @@ test('the renderer fits the world sun view to its casters and leaves the floor a
   assert.equal(rendererWith({ batches: [floor] }).fittedWorldShadowView(), null);
   const skinned = { ...slab([0, 1, 0], [1, 1, 1]), skin: {} };
   assert.equal(rendererWith({ batches: [{ floor: false, castShadow: true, parts: [...walls, skinned] }] }).fittedWorldShadowView(), null);
+});
+
+// The mountain-valley-a view in bench/reference/grand-scenes.js: a 4.6 km wide shadow box over a valley (issue #2687).
+const VALLEY_SHADOW = { eye: [-2625, 1620, 1050], target: [0, 150, -400], up: [0, 1, 0], extent: 2300, near: 1, far: 7000 };
+const STAIR_FREE_TEXEL_METRES = 1.25;
+
+test('the sun map for a kilometre-scale view is large enough that a texel stays near a metre (#2687)', () => {
+  assert.equal(sunShadowMapSize(65), 2048);
+  assert.equal(sunShadowMapSize(1000), 2048);
+  assert.equal(sunShadowMapSize(VALLEY_SHADOW.extent), 4096);
+  const texelMetres = (VALLEY_SHADOW.extent * 2) / sunShadowMapSize(VALLEY_SHADOW.extent);
+  assert.ok(texelMetres < STAIR_FREE_TEXEL_METRES, `texel ${texelMetres} m, was ${(VALLEY_SHADOW.extent * 2) / 2048} m with the 2048 map`);
+});
+
+test('the renderer sizes the single sun map from the shadow view it draws with (#2687)', () => {
+  const casters = [{ floor: false, castShadow: true, parts: [slab([0, 0, 0], [10, 10, 10])] }];
+  const sized = shadowBounds => rendererWith({ shadowBounds, batches: casters, shadowCascades: null, activeLightDirection: [-0.75, 0.42, 0.3] }).shadowMapSizeWanted();
+  assert.equal(sized(VALLEY_SHADOW), 4096);
+  assert.equal(sized({ extent: 85 }), 2048);
+  assert.equal(sized({}), 2048);
+  assert.equal(rendererWith({ shadowBounds: VALLEY_SHADOW, batches: [{ floor: false, castShadow: false, parts: [] }], shadowCascades: null }).shadowMapSizeWanted(), 1);
 });

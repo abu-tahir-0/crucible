@@ -22,7 +22,7 @@ try {
   }));
   await page.goto('http://127.0.0.1:5173/glb-fidelity-smoke.html');
   const results = await page.evaluate(async () => {
-    const { CrucibleRenderer, exportGlb, box, sphere } = await import('/build/67.module.js');
+    const { CrucibleRenderer, exportGlb, box, sphere } = await import('/build/crucible.module.js');
     const { createFilmScenes } = await import('/build/film.js');
     const { parseGltf } = await import('/build/gltf.js');
     const canvas = document.querySelector('canvas');

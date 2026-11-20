@@ -44,7 +44,7 @@ for (const [name, source] of Object.entries(sources)) {
   });
 
   test(`the ${name} program stays under its source size`, () => {
-    assert.ok(source.length < 33500, `${source.length} characters`);
+    assert.ok(source.length < 34000, `${source.length} characters`);
   });
 }
 

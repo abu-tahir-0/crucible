@@ -18,6 +18,14 @@ export function withSceneFileRendererDefaults(rendererOptions = {}) {
   return { lodPixelError: SCENE_FILE_LOD_PIXEL_ERROR, ...rendererOptions };
 }
 
+/**
+ * The environment of a scene file: the GLB's own KHR_lights_punctual lights (`asset.lights`) with the scene file's
+ * `renderer.environment` on top, key by key, so a scene file can still override the file's key light or light lists.
+ */
+export function withSceneFileLights(fileLights = {}, sceneEnvironment = {}) {
+  return { ...fileLights, ...sceneEnvironment };
+}
+
 /** Triangles over pixels for these parts on a canvas of `pixels` pixels (the canvas size times the pixel ratio squared). */
 export function trianglesPerPixel(parts, pixels) {
   if (!(pixels > 0)) throw new RangeError('pixels must be the canvas width times its height times the pixel ratio squared, a positive number.');

@@ -223,3 +223,43 @@ test('a light list over its cap names the cap, why it exists and what to do inst
   assert.match(message, /HDRI or emissive parts/);
   assert.match(message, /backend native, which takes 256 lights/);
 });
+
+test('set-camera fStop null turns depth of field off and clears focusDistance with it', () => {
+  const scene = createAgentScene(baseRecipe({ camera: { eye: [0, 1, 6], target: [0, 1, -4], fStop: 2, focusDistance: 3.5 } }));
+  scene.apply([{ type: 'set-camera', fStop: null }], { expectedRevision: 0 });
+  assert.equal(Object.hasOwn(scene.camera, 'fStop'), false);
+  assert.equal(Object.hasOwn(scene.camera, 'focusDistance'), false);
+  assert.equal(Object.hasOwn(scene.exportRecipe().camera, 'fStop'), false);
+  assert.equal(Object.hasOwn(scene.exportRecipe().camera, 'focusDistance'), false);
+  const effects = { depthOfField: { blur: 0, focusDistance: 5 } };
+  assert.equal(effectsWithFStop(effects, scene.camera).depthOfField.blur, 0);
+  scene.apply([{ type: 'set-camera', fov: 35 }], { expectedRevision: 1 });
+  assert.equal(Object.hasOwn(scene.camera, 'fStop'), false);
+});
+
+test('set-camera focusDistance null clears only the focus plane', () => {
+  const scene = createAgentScene(baseRecipe({ camera: { fStop: 2, focusDistance: 3.5 } }));
+  scene.apply([{ type: 'set-camera', focusDistance: null }], { expectedRevision: 0 });
+  assert.equal(scene.camera.fStop, 2);
+  assert.equal(Object.hasOwn(scene.camera, 'focusDistance'), false);
+});
+
+test('set-camera fStop null with a numeric focusDistance says what to pass, and a recipe camera refuses null', () => {
+  const scene = createAgentScene(baseRecipe({ camera: { fStop: 2, focusDistance: 3.5 } }));
+  assert.throws(() => scene.apply([{ type: 'set-camera', fStop: null, focusDistance: 2 }], { expectedRevision: 0 }), /camera\.focusDistance: got 2; expected null or left out: fStop null already clears focusDistance/);
+  assert.equal(scene.camera.fStop, 2);
+  assert.throws(() => createAgentScene(baseRecipe({ camera: { fStop: null } })), /camera\.fStop: got null; expected a number from 0\.7 to 64/);
+});
+
+test('the MCP set-camera operation accepts fStop null and focusDistance null', async context => {
+  const { client, scene } = await connect(context);
+  await client.callTool({ name: 'scene_create', arguments: { recipe: baseRecipe({ camera: { fStop: 2, focusDistance: 3.5 } }) } });
+  const sessionId = '00000000-0000-4000-8000-000000000000';
+  const clearFocus = await client.callTool({ name: 'scene_apply', arguments: { sessionId, expectedRevision: scene().revision, operations: [{ type: 'set-camera', focusDistance: null }] } });
+  assert.notEqual(clearFocus.isError, true, JSON.stringify(clearFocus.content));
+  assert.equal(scene().camera.fStop, 2);
+  assert.equal(Object.hasOwn(scene().camera, 'focusDistance'), false);
+  const clearLens = await client.callTool({ name: 'scene_apply', arguments: { sessionId, expectedRevision: scene().revision, operations: [{ type: 'set-camera', fStop: null }] } });
+  assert.notEqual(clearLens.isError, true, JSON.stringify(clearLens.content));
+  assert.equal(Object.hasOwn(scene().camera, 'fStop'), false);
+});

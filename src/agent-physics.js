@@ -7,7 +7,7 @@ import { normalizeForceFields } from './force-fields.js';
 import { normalizeFloat } from './physics-buoyancy.js';
 import { rotateByQuaternion } from './physics-values.js';
 import { MAX_WAKE_POINTS, wakeTrail } from './ocean-wake.js';
-import { AGENT_SCENE_CAPABILITIES } from './agent-scene-capabilities.js';
+import { AGENT_SCENE_CAPABILITIES, PHYSICS_BODY_SHAPES } from './agent-scene-capabilities.js';
 
 export { loadPhysicsEngine, physicsEngineLoaded, setPhysicsModuleLoader };
 export { needsPhysics } from './agent-scene-modules.js';
@@ -24,8 +24,8 @@ const MAX_REPORTED_SENSOR_EVENTS = 128;
 const MAX_EVENTS = 128;
 const MAX_COMPOUND_SHAPES = 16;
 const BODY_TYPES = ['dynamic', 'fixed', 'kinematic'];
-const SHAPES = ['box', 'ball', 'capsule', 'cylinder', 'cone', 'convex', 'trimesh', 'compound'];
-const COMPOUND_PART_SHAPES = ['box', 'ball', 'capsule', 'cylinder', 'cone'];
+const SHAPES = PHYSICS_BODY_SHAPES;
+export const COMPOUND_PART_SHAPES = ['box', 'ball', 'capsule', 'cylinder', 'cone'];
 const JOINT_TYPES = ['spherical', 'revolute', 'prismatic', 'fixed', 'spring'];
 const BODY_FIELDS = ['node', 'type', 'shape', 'shapes', 'mass', 'density', 'friction', 'restitution', 'sensor', 'velocity', 'angularVelocity', 'layer', 'collidesWith', 'float'];
 const COMPOUND_PART_FIELDS = ['shape', 'translation', 'rotation', 'halfExtents', 'radius', 'halfHeight'];
@@ -115,7 +115,7 @@ function normalizeBody(input, recipeNodes, motionNodeIds, claimedNodes, path) {
     throw invalidField(`${path}.shape`, shape, `one of ${SHAPES.join(', ')}`);
   }
   if (shape === 'trimesh' && type === 'dynamic') {
-    throw invalidField(`${path}.shape`, shape, 'one of convex, box, ball or capsule for a dynamic body; trimesh is for fixed or kinematic bodies');
+    throw invalidField(`${path}.shape`, shape, 'one of convex, box, ball, capsule, cylinder, cone or compound for a dynamic body; trimesh is for fixed or kinematic bodies');
   }
   if (type !== 'dynamic' && (input.velocity !== undefined || input.angularVelocity !== undefined)) {
     const field = input.velocity !== undefined ? 'velocity' : 'angularVelocity';

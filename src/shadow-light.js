@@ -57,3 +57,12 @@ export function shadowBiasPerSlope(light, mapSize) {
   const texelWorldSize = (light.extent * 2) / mapSize;
   return (texelWorldSize * FILTER_REACH_TEXELS) / (light.far - light.near);
 }
+
+const DEFAULT_SHADOW_MAP_SIZE = 2048;
+const LARGE_SHADOW_MAP_SIZE = 4096;
+const LARGE_SHADOW_EXTENT = 1000;
+
+/** The side of the sun's depth map in texels: a view that covers more than a kilometre either side gets the larger map. */
+export function sunShadowMapSize(extent) {
+  return extent > LARGE_SHADOW_EXTENT ? LARGE_SHADOW_MAP_SIZE : DEFAULT_SHADOW_MAP_SIZE;
+}

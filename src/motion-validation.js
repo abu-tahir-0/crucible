@@ -51,3 +51,6 @@ export function valueFrom(value, size, label) {
   }
   return value.map(component => finite(component, label));
 }
+
+/** The most keys one motion track holds; bake-motion, track input and IK channels share it. */
+export const MAX_KEYS_PER_TRACK = 256;

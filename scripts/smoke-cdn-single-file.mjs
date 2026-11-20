@@ -26,7 +26,7 @@ if (!publishedUrl) {
   assert.equal(extracted.status, 0, extracted.stderr);
   const packageFolder = join(unpacked, 'package');
   const mountPath = `/npm/@codepawlhq/crucible@${version}/`;
-  const standalone = await readFile(join(packageFolder, 'build/67.standalone.js'));
+  const standalone = await readFile(join(packageFolder, 'build/crucible.standalone.js'));
   console.log(`standalone bytes=${standalone.length} gzip=${gzipSync(standalone, { level: 9 }).length}`);
   server = createServer(async (request, response) => {
     const path = decodeURIComponent(new URL(request.url, 'http://x').pathname);
@@ -37,7 +37,7 @@ if (!publishedUrl) {
     response.end(await readFile(file));
   });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
-  moduleUrl = `http://127.0.0.1:${server.address().port}${mountPath}build/67.standalone.js`;
+  moduleUrl = `http://127.0.0.1:${server.address().port}${mountPath}build/crucible.standalone.js`;
 }
 
 const page = `<!doctype html><canvas id="view" width="320" height="240"></canvas>

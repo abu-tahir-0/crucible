@@ -39,3 +39,18 @@ test('review detaches caller camera and imported animation records', () => {
   assert.equal(normalized.shots[0].camera.eye[0], 4);
   assert.equal(normalized.shots[0].animation.time, 1);
 });
+
+test('review accepts projection and orthoScale on a shot camera and checks them', () => {
+  const camera = { eye: [10, 5, 10], target: [0, 2, 0], projection: 'orthographic', orthoScale: 8 };
+  const normalized = normalizeReview({ ...request(), shots: [{ camera }] });
+  assert.deepEqual(normalized.shots[0].camera, camera);
+  assert.throws(() => normalizeReview({ ...request(), shots: [{ camera: { orthoScale: 0 } }] }), /orthoScale must be above 0/);
+  assert.throws(() => normalizeReview({ ...request(), shots: [{ camera: { projection: 'fisheye' } }] }), /perspective, orthographic/);
+  assert.throws(() => normalizeReview({ ...request(), shots: [{ camera: { focalLength: 35 } }] }), /pass fov in degrees/);
+});
+
+test('review sets rendererTime from the shot time unless the shot gives one', () => {
+  const { shots } = normalizeReview({ ...request(), shots: [{ motionTime: 1.5 }, { animation: { clip: 0, time: 2 } },
+    { motionTime: 1.5, rendererTime: 0 }, {}] });
+  assert.deepEqual(shots.map(shot => shot.rendererTime), [1.5, 2, 0, 0]);
+});

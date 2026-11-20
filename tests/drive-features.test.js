@@ -60,6 +60,28 @@ test('parseCommandLine separates ids from flags and rejects unknown flags', () =
   assert.throws(() => parseCommandLine(['shot', 'home', '--out']), /needs a value/);
 });
 
+test('parseCommandLine rejects a value flag that swallowed the next flag', () => {
+  for (const name of ['out', 'origin', 'width', 'height', 'surface', 'settle']) {
+    assert.throws(
+      () => parseCommandLine(['shot', 'home', `--${name}`, '--full-page']),
+      new RegExp(`--${name} got "--full-page".*looks like another flag`),
+    );
+  }
+});
+
+test('parseCommandLine requires a finite size above 0 and a settle of 0 or more', () => {
+  for (const name of ['width', 'height']) {
+    for (const bad of ['abc', '0', '-5', 'Infinity', 'NaN', '', '  ']) {
+      assert.throws(() => parseCommandLine(['shot', 'home', `--${name}`, bad]), new RegExp(`--${name} got .*finite number above 0`), `${name} ${bad}`);
+    }
+    assert.equal(parseCommandLine(['shot', 'home', `--${name}`, '800']).flags[name], '800');
+  }
+  for (const bad of ['abc', '-1', 'Infinity', '']) {
+    assert.throws(() => parseCommandLine(['shot', 'home', '--settle', bad]), /--settle got .*0 or above/, `settle ${bad}`);
+  }
+  assert.equal(parseCommandLine(['shot', 'home', '--settle', '0']).flags.settle, '0');
+});
+
 test('the real FEATURES.md has unique ids and every page route points at a file', () => {
   const features = parseFeatures(readFileSync(new URL('../FEATURES.md', import.meta.url), 'utf8'));
   const ids = features.map(feature => feature.id);

@@ -86,7 +86,7 @@ fails the job and does not fall back, so choose `cpu` unless you know the machin
 | `draft` | Glaze (the raster renderer), light shading, no multisampling, coarse detail: the fast preview |
 | `realtime` | Glaze at the preview's own settings |
 | `realtime-high` | Glaze with 8 samples and fine detail; needs a hardware GPU |
-| `final` | The path tracer at 256 samples with the wavelet denoiser, on `native` when Cook and a ray query adapter exist, else `gpu`, else `cpu` |
+| `final` | The path tracer at 256 samples with `denoise: true` (OIDN when its package is installed, else the wavelet filter), on `native` when Cook and a ray query adapter exist, else `gpu`, else `cpu` |
 
 ```json
 { "expectedRevision": 3, "settings": { "kind": "image", "width": 640, "height": 360, "quality": "draft" } }
@@ -154,10 +154,10 @@ stops at 30 minutes, so keep a traced video short and small. It writes no passes
 (hardware ray queries; it falls back to `gpu` or `cpu` and `metrics.pathTracer.backendNote` says why). Start with 16
 samples to judge the light, then raise them. Ranges: `samples` 1 to 1024 (default 64, 16 with `oidn`), `bounces` 1 to 16 (default 8), `maxSeconds` 1 to 600
 (default 120), `seed` 0 to 2147483647, `noiseThreshold` 0 to 0.1 (0 draws every sample).
-`denoise` is `true` (the built-in filter), `false`, `"wavelet"`, `"none"` or `"oidn"` where the server has that optional package.
+`denoise` is `true` (OIDN when its package is installed, else the wavelet filter), `false`, `"wavelet"`, `"none"` or `"oidn"` where the server has that optional package.
 A scene far over the `cpu` tracer's 400,000 triangles is refused at submit with the count; `native` takes more, up to what the adapter reports, and refuses a bigger scene
 with the count and the limit. `metrics.report.noise.verdict` says whether to raise `samples`. Native traces grid volumes (next section).
-The OIDN package `@codepawlhq/crucible-denoise-oidn` is a separate package: `npm install @codepawlhq/crucible-denoise-oidn`, then `node node_modules/@codepawlhq/crucible-denoise-oidn/fetch-oidn.mjs` (or set `OIDN_DENOISE_PATH`). Without it the job does not fail: it runs the wavelet filter (the GPU a-trous filter on `backend: "native"`) and says so in `metrics.pathTracer.denoiser` and `denoiserNote`. Check `denoiser` before you judge grain.
+The OIDN package `@codepawlhq/crucible-denoise-oidn` is a separate package: `npm install @codepawlhq/crucible-denoise-oidn`, then `node node_modules/@codepawlhq/crucible-denoise-oidn/fetch-oidn.mjs` (or set `OIDN_DENOISE_PATH`). Without it, `denoise: true` and `"oidn"` do not fail: the job runs the wavelet filter (the GPU a-trous filter on `backend: "native"`) and says so in `metrics.pathTracer.denoiser` and `denoiserNote`. Check `denoiser` before you judge grain.
 
 ## Grid volumes and texture sequences
 

@@ -49,6 +49,15 @@ export function lightingSetupFields(name) {
   return structuredClone(requireSetup(name).fields);
 }
 
+/**
+ * Whether a setup's own map is drawn as the background. A recipe that sets skyTop or skyBottom to something other than the
+ * setup's colours asked for that gradient, so the renderer draws it behind the scene and the map still lights the scene.
+ */
+export function setupMapShowsBackground({ world, setup, skyTop, skyBottom }) {
+  const defaults = requireSetup(setup).fields;
+  return world && String([skyTop, skyBottom]) === String([defaults.skyTop, defaults.skyBottom]);
+}
+
 function normalized(vector) {
   const length = Math.hypot(...vector);
   return vector.map(component => component / length);

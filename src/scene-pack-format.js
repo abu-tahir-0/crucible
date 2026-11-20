@@ -9,12 +9,52 @@ const TYPED_ARRAYS = Object.freeze({
   Float32Array, Float64Array, Int8Array, Uint8Array, Uint8ClampedArray, Int16Array, Uint16Array, Int32Array, Uint32Array,
 });
 const TYPED_MARKER = '$typed';
+const RGBE_MARKER = '$rgbe';
 const ALIGNMENT = 4;
 const HEADER_BYTES = 8;
 const MAGIC = 0x4b435243; // "CRCK" read as little endian
 
 function padTo(length, alignment) {
   return Math.ceil(length / alignment) * alignment;
+}
+
+// Colour maps (the reflection probes of metal parts) are the bulk of a pack, so their linear RGB floats are stored as RGBE:
+// three 8 bit mantissas and one shared 8 bit exponent, a third of the bytes with at most one part in 128 of error on the
+// brightest channel of a pixel. The runtime expands them back to the Float32Array the renderer takes.
+function isColourMap(value) {
+  return value.kind === 'environment-map' && value.channels === 3 && value.data instanceof Float32Array;
+}
+
+/** Packs linear RGB floats as RGBE bytes (four per pixel). Negative values clamp to zero; the exponent is shared per pixel. */
+export function encodeRgbe(rgb) {
+  const bytes = new Uint8Array(rgb.length / 3 * 4);
+  for (let pixel = 0; pixel * 3 < rgb.length; pixel++) {
+    const red = Math.max(0, rgb[pixel * 3]);
+    const green = Math.max(0, rgb[pixel * 3 + 1]);
+    const blue = Math.max(0, rgb[pixel * 3 + 2]);
+    const brightest = Math.max(red, green, blue);
+    if (brightest < 1e-32) continue;
+    const exponent = Math.floor(Math.log2(brightest)) + 1;
+    const scale = 256 / 2 ** exponent;
+    bytes[pixel * 4] = Math.min(255, Math.round(red * scale));
+    bytes[pixel * 4 + 1] = Math.min(255, Math.round(green * scale));
+    bytes[pixel * 4 + 2] = Math.min(255, Math.round(blue * scale));
+    bytes[pixel * 4 + 3] = exponent + 128;
+  }
+  return bytes;
+}
+
+/** The inverse of encodeRgbe: a Float32Array of linear RGB, three values per pixel. */
+export function decodeRgbe(bytes) {
+  const rgb = new Float32Array(bytes.length / 4 * 3);
+  for (let pixel = 0; pixel * 4 < bytes.length; pixel++) {
+    if (bytes[pixel * 4 + 3] === 0) continue;
+    const scale = 2 ** (bytes[pixel * 4 + 3] - 128) / 256;
+    rgb[pixel * 3] = bytes[pixel * 4] * scale;
+    rgb[pixel * 3 + 1] = bytes[pixel * 4 + 1] * scale;
+    rgb[pixel * 3 + 2] = bytes[pixel * 4 + 2] * scale;
+  }
+  return rgb;
 }
 
 function describeKind(value) {
@@ -46,7 +86,10 @@ function encodeValue(value, path, chunks, cursor) {
     if (kind !== 'Object') throw new TypeError(`${path}: got a ${kind}; expected plain data. A pack holds numbers, strings, arrays, objects and typed arrays only.`);
     const encoded = {};
     for (const key of Object.keys(value)) {
-      if (value[key] !== undefined) encoded[key] = encodeValue(value[key], `${path}.${key}`, chunks, cursor);
+      if (value[key] === undefined) continue;
+      encoded[key] = key === 'data' && isColourMap(value)
+        ? { [RGBE_MARKER]: encodeValue(encodeRgbe(value.data), `${path}.data`, chunks, cursor) }
+        : encodeValue(value[key], `${path}.${key}`, chunks, cursor);
     }
     return encoded;
   }
@@ -61,6 +104,7 @@ function decodeValue(value, binary) {
     if (!Constructor) throw new TypeError(`pack: unknown typed array "${value[TYPED_MARKER]}"; repack the scene with this version of crucible pack.`);
     return new Constructor(binary.buffer, binary.byteOffset + value.offset, value.length);
   }
+  if (Object.hasOwn(value, RGBE_MARKER)) return decodeRgbe(decodeValue(value[RGBE_MARKER], binary));
   const decoded = {};
   for (const key of Object.keys(value)) decoded[key] = decodeValue(value[key], binary);
   return decoded;

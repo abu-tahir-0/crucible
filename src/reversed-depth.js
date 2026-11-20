@@ -268,13 +268,15 @@ export function installReversedDepth(renderer, mode = 'auto') {
   }
 
   renderer.render = function renderReversed(frame) {
+    // A frame can draw another frame inside it (the emission mask of a volume shadow, #1360): the inner one hands the outer one its frame state back.
     const outerEye = frameEye;
+    const outerInFrame = inFrame;
     frameEye = frame.eye;
     inFrame = true;
     try {
       return original.render.call(this, frame);
     } finally {
-      inFrame = false;
+      inFrame = outerInFrame;
       frameEye = outerEye;
       endReversed();
       clearCameraRelative();

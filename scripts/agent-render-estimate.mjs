@@ -8,7 +8,7 @@ import { MAX_TRACE_TRIANGLES } from '../src/path-tracer-scene.js';
 const MIB = 1024 ** 2;
 
 /** What scene_capabilities topic jobs says about the estimate and the report. The details are in docs/mcp.md. */
-export const RENDER_ESTIMATE_NOTE = 'scene_render_submit returns estimate { seconds, peakMemoryMiB, basis } for this device before the job runs (from the scene size, the settings and the last 16 jobs here; about 2x either way). scene_render_result metrics.report holds measured time and peak memory, the ratio to the estimate, samplesDrawn for the path tracer, and fallbacks (what ran differently and why).';
+export const RENDER_ESTIMATE_NOTE = 'scene_render_submit returns estimate { seconds, peakMemoryMiB, outputMiB, basis } for this device before the job runs (from the scene size, the settings and the last 16 jobs here; about 2x either way). scene_render_result metrics.report holds measured time and peak memory, the ratio to the estimate, samplesDrawn for the path tracer, and fallbacks (what ran differently and why).';
 
 /** Jobs kept in the history, newest last. Older ones are dropped. */
 export const HISTORY_LIMIT = 16;
@@ -47,7 +47,34 @@ export const COST_MODEL = Object.freeze({
   pathTracerExtraMiB: 30,
   miBPerTexture: 4,
   nodeBytesPerPixel: 24,
+  pngBytesPerPixel: 0.65,
+  png16BytesPerPixel: 1.95,
+  exrBytesPerPixel: 3.5,
+  multilayerPassBytesPerPixel: 2,
+  matteBytesPerPixel: 0.12,
+  videoBytesPerPixel: 0.05,
 });
+
+/** Expected combined output size in bytes from frame dimensions, count, format, passes and mattes. */
+export function estimateOutputBytes(settings) {
+  const width = settings.region?.width ?? settings.width;
+  const height = settings.region?.height ?? settings.height;
+  const pixels = width * height;
+  const frameCount = settings.frameCount ?? 1;
+  if (settings.kind === 'video') return Math.ceil(pixels * COST_MODEL.videoBytesPerPixel * frameCount);
+  if (settings.kind === 'icons') return Math.ceil(pixels * COST_MODEL.pngBytesPerPixel * frameCount * 2) + 4096;
+  const basePerPixel = settings.format === 'exr'
+    ? COST_MODEL.exrBytesPerPixel
+    : settings.format === 'png16'
+      ? COST_MODEL.png16BytesPerPixel
+      : COST_MODEL.pngBytesPerPixel;
+  const passCount = settings.passes?.length ?? 0;
+  const matteCount = settings.mattes?.length ?? 0;
+  const frameBytes = settings.multilayer
+    ? pixels * (basePerPixel + passCount * COST_MODEL.multilayerPassBytesPerPixel)
+    : pixels * basePerPixel * (1 + passCount) + pixels * COST_MODEL.matteBytesPerPixel * matteCount;
+  return Math.ceil(frameBytes * frameCount);
+}
 
 function textureCount(recipe) {
   const text = JSON.stringify(recipe?.materials ?? []);
@@ -177,6 +204,7 @@ export function estimateRenderJob({ size, settings, backend, memoryBudgetMiB, hi
   const estimate = {
     seconds: round(modelSeconds * correction.seconds, 1),
     peakMemoryMiB: Math.round(modelPeakMemoryMiB * correction.memory),
+    outputMiB: round(estimateOutputBytes(settings) / MIB, 1),
     framesPerSecond: round(settings.frameCount / Math.max(0.001, modelSeconds * correction.seconds), 2),
     frameSeconds: round(frameSeconds * correction.seconds, 4),
     fixedSeconds: round((modelSeconds - frameSeconds * settings.frameCount) * correction.seconds, 2),
@@ -310,4 +338,21 @@ export function pathTraceTriangleProblem(size, renderer, { canChooseBackend = tr
   if (picksRenderer) return `${base} Simplify or drop meshes, or leave budget and quality out and pick the renderer yourself.`;
   if (!canChooseBackend) return `${base} Simplify or drop meshes; this runtime has no GPU backend.`;
   return `${base} Simplify or drop meshes, or set renderer.backend to "gpu" or "native", which hold more.`;
+}
+
+/** Error message when a job's estimated outputs pass the combined output byte budget, or undefined. */
+export function outputByteBudgetProblem(settings, maximumOutputBytes = 128 * MIB) {
+  const estimatedBytes = estimateOutputBytes(settings);
+  if (estimatedBytes <= maximumOutputBytes) return undefined;
+  const width = settings.region?.width ?? settings.width;
+  const height = settings.region?.height ?? settings.height;
+  const frameCount = settings.frameCount ?? 1;
+  const perFrameBytes = Math.max(1, Math.ceil(estimatedBytes / frameCount));
+  const fittingFrames = Math.floor(maximumOutputBytes / perFrameBytes);
+  const estimatedMiB = round(estimatedBytes / MIB, 1);
+  const budgetMiB = round(maximumOutputBytes / MIB, 1);
+  if (settings.kind === 'stills' && fittingFrames >= 2) {
+    return `settings.stillCount: ${frameCount} frames at ${width}x${height} is estimated at ${estimatedMiB} MiB, over the ${budgetMiB} MiB combined output byte budget. Render in parts of at most ${fittingFrames} frames (each from its own motion.start), lower width and height, or use kind: "video".`;
+  }
+  return `settings: ${frameCount} frame(s) at ${width}x${height} is estimated at ${estimatedMiB} MiB, over the ${budgetMiB} MiB combined output byte budget. Lower width and height, drop extra passes, or use kind: "video".`;
 }

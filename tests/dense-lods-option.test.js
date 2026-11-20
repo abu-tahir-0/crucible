@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { sphere } from '../src/geometry.js';
-import { partsForRendererOptions, SCENE_FILE_LOD_PIXEL_ERROR, withSceneFileRendererDefaults } from '../src/dense-lods.js';
+import { partsForRendererOptions, SCENE_FILE_LOD_PIXEL_ERROR, withSceneFileLights, withSceneFileRendererDefaults } from '../src/dense-lods.js';
 
 function scanPart() {
   return { name: 'scan', geometry: sphere(200, 100), matrix: new Float32Array(16), material: { tag: 'surface', color: [0.5, 0.5, 0.5], metallic: 0, roughness: 0.5 } };
@@ -48,6 +48,16 @@ test('a scene file picks levels at 0.5 pixels of error unless its renderer says 
   assert.equal(withSceneFileRendererDefaults({ samples: 2 }).lodPixelError, 0.5);
   assert.equal(withSceneFileRendererDefaults({ lodPixelError: 2 }).lodPixelError, 2);
   assert.equal(withSceneFileRendererDefaults({ samples: 2 }).samples, 2);
+});
+
+test('a scene file is lit by its GLB lights, and its own renderer.environment wins key by key (#2664)', () => {
+  const fileLights = { pointLights: [{ position: [0, 2, 0], color: [1, 1, 1], intensity: 5, range: 0 }], keyColor: [15, 15, 15], lightDirection: [0, 1, 0], keyIntensity: 1, fillIntensity: 0 };
+  assert.deepEqual(withSceneFileLights(fileLights, undefined), fileLights);
+  const merged = withSceneFileLights(fileLights, { keyColor: [40, 40, 40], exposure: 2 });
+  assert.deepEqual(merged.keyColor, [40, 40, 40]);
+  assert.equal(merged.pointLights, fileLights.pointLights);
+  assert.equal(merged.exposure, 2);
+  assert.deepEqual(withSceneFileLights(undefined, { keyIntensity: 0.5 }), { keyIntensity: 0.5 });
 });
 
 test('a pixel ratio that is not a usable number is refused by name, and NaN thresholds are not read as "dense"', async () => {

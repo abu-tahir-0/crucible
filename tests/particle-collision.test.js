@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createAgentScene } from '../src/agent-scene.js';
 import { AGENT_SCENE_CAPABILITIES } from '../src/agent-scene-capabilities.js';
 import { createCollisionSurface, findFirstCollision } from '../src/particle-collision.js';
-import { createParticleLaunches, particleStateAt } from '../src/particles.js';
+import { PARTICLE_LIMITS, createParticleLaunches, particleStateAt } from '../src/particles.js';
 import { icoSphere } from '../src/geometry.js';
 
 // A unit box is 1 m wide; the slab is scaled to 4 m x 0.2 m x 4 m, so its top face sits at y = 0.1.
@@ -203,17 +203,26 @@ test('a floor bounce needs no collider, and the closed form still serves a free 
   assert.equal(particleStateAt(free, 0, { ...forces, bounce: 0 }, 'constant', 3, state).position[1], 0, 'lands on the floor in closed form');
 });
 
-test('stepping from birth every frame stays cheap enough for long lives, and playback continues from the last frame', () => {
-  const system = { count: 500, seed: 5, speed: [2, 6], spread: 50, bounce: 0.6, friction: 0.2, lifetime: 20, emitter: { shape: 'sphere', radius: 0.5, position: [0, 2, 0] } };
-  const scene = createAgentScene(dropRecipe(system));
-  const start = performance.now();
-  for (let frame = 0; frame <= 120; frame++) scene.sampleMotion(frame / 6);
-  const playback = performance.now() - start;
-  const cold = createAgentScene(dropRecipe(system));
-  const coldStart = performance.now();
-  cold.sampleMotion(20 - 0.01);
-  const coldSeek = performance.now() - coldStart;
-  assert.ok(playback < 20000 && coldSeek < 20000, `playback ${playback.toFixed(0)} ms for 121 frames, cold seek to the end ${coldSeek.toFixed(0)} ms`);
+test('playback integrates each particle step once and continues from the last frame, a seek backwards starts again', () => {
+  const forces = { gravity: [0, -9.81, 0], wind: [0, 0, 0], fields: [], drag: 0, floor: 0, bounce: 0.6, friction: 0.2 };
+  const lifetime = 20;
+  const count = 500;
+  const settings = { count, seed: 5, emitter: { shape: 'sphere', position: [0, 2, 0], halfExtents: [0, 0, 0], radius: 0.5 }, lifetime: [lifetime, lifetime], speed: [2, 6], direction: [0, 1, 0], spreadRadians: Math.PI * 50 / 180, size: [1, 1], forces };
+  const stepsPerLife = Math.ceil(lifetime / PARTICLE_LIMITS.fieldStepSeconds);
+  const state = { position: [0, 0, 0], scale: 0 };
+  const sampleAll = (launches, time) => {
+    for (let index = 0; index < count; index++) particleStateAt(launches, index, forces, 'constant', time, state);
+  };
+  const playing = createParticleLaunches(settings);
+  for (let frame = 0; frame <= 120; frame++) sampleAll(playing, frame / 6);
+  const playbackSteps = playing.track.stepsTaken;
+  assert.ok(playbackSteps > 0 && playbackSteps <= count * stepsPerLife, `121 frames took ${playbackSteps} steps, at most ${count * stepsPerLife} when each step runs once`);
+  const cold = createParticleLaunches(settings);
+  sampleAll(cold, lifetime - 0.01);
+  assert.ok(cold.track.stepsTaken <= count * stepsPerLife, `a cold seek to the end took ${cold.track.stepsTaken} steps`);
+  assert.equal(cold.track.stepsTaken, playbackSteps, 'playing every frame costs the same steps as one seek to the end');
+  sampleAll(playing, 5);
+  assert.ok(playing.track.stepsTaken > playbackSteps && playing.track.stepsTaken <= 2 * count * stepsPerLife, 'a seek backwards starts from birth once');
 });
 
 test('Coulomb friction stops a slider after about v squared over two mu g, and a settled particle stops turning', () => {

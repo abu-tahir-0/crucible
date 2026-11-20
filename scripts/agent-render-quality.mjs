@@ -16,7 +16,7 @@ export const RASTER_TIER_OPTIONS = Object.freeze({
 });
 
 /** The path tracer settings of the final tier; the backend is chosen per device. */
-export const FINAL_TIER_RENDERER = Object.freeze({ type: 'pathTracer', samples: 256, denoise: 'wavelet' });
+export const FINAL_TIER_RENDERER = Object.freeze({ type: 'pathTracer', samples: 256, denoise: true });
 
 import { PATH_TRACER_JOB_LIMITS } from '../src/path-tracer-capabilities.js';
 

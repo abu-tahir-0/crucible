@@ -244,17 +244,24 @@ const hasBuild = existsSync(new URL('../build/mcp/server.mjs', import.meta.url))
 const chromePath = process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const hasBrowser = existsSync(chromePath) || Boolean(process.env.CI);
 
-function particleRecipe({ flushRanking = false } = {}) {
+function particleRecipe({ flushRanking = false, hiddenPost = false } = {}) {
   const nodes = [{ id: 'ground', geometry: 'floor', material: 'stone', translation: [0, -0.1, -1], scale: [12, 0.2, 12] }];
   for (let index = 0; index < 4; index++) nodes.push({ id: `ball-${index}`, geometry: 'ball', material: 'stone', scale: [0.5, 0.5, 0.5], translation: [index * 1.6 - 2.4, 0.6, -1] });
   nodes.push({ id: 'dust', geometry: 'speck', material: 'ember' });
+  const geometries = [{ id: 'floor', type: 'box', bevel: 0 }, { id: 'ball', type: 'sphere', segments: 16 }, { id: 'speck', type: 'box', bevel: 0 }];
+  // A post with a mesh of its own, packed after the dust, hidden from 1.25 to 1.6 s: the triangle table shrinks by its
+  // triangles and grows back, and the bytes before it stay, so the delta must patch the shared prefix (#2180).
+  const motion = hiddenPost ? { duration: 2, tracks: [{ kind: 'node', id: 'marker', property: 'visible', keyframes: [{ time: 0, value: 1 }, { time: 1.25, value: 0 }, { time: 1.6, value: 1 }] }] } : undefined;
+  if (hiddenPost) {
+    geometries.push({ id: 'post', type: 'box', bevel: 0 });
+    nodes.push({ id: 'marker', geometry: 'post', material: 'stone', translation: [3, 0.5, -3], scale: [0.3, 1, 0.3] });
+  }
   return { format: 'crucible.scene', schemaVersion: 1,
-    geometries: [{ id: 'floor', type: 'box', bevel: 0 }, { id: 'ball', type: 'sphere', segments: 16 }, { id: 'speck', type: 'box', bevel: 0 }],
+    geometries, ...(motion ? { motion } : {}),
     materials: [{ id: 'stone', color: [0.6, 0.55, 0.5] }, { id: 'ember', color: [1, 0.6, 0.2] }], nodes,
     particles: { systems: [{ node: 'dust', seed: 1, count: 200, lifetime: 3, speed: 1, size: 0.03 }] },
-    // Dust is born at the origin, on the floor's top face. With the flush ranking on (the default) each pose cuts the faces hidden
-    // under that face, so the triangle table changes length every frame and the delta must send it whole (#2171). The clip
-    // measures the delta, not the ranking, so the ranking is off unless a test asks for it to pin the prefix patch.
+    // Dust is born at the origin, on the floor's top face. The flush ranking leaves particles out since #2728, so it no longer
+    // cuts the floor under them each frame; the ranking stays off unless a test asks for it, since the clip measures the delta.
     environment: { setup: 'sunset', ...(flushRanking ? {} : { resolveCoplanar: false }) }, camera: { eye: [0, 3, 6], target: [0, 0.5, -1], fov: 50 } };
 }
 
@@ -278,14 +285,16 @@ async function exportClipTables(recipe, frameTimes) {
   });
 }
 
-test('the frames of the particle clip with flush ranking on change table lengths, and the delta sends no more than the 60 percent a same-length frame needs',
+test('the frames of the particle clip that hide a post change the triangle table length, and the delta sends no more than the 60 percent a same-length frame needs',
   { skip: !cookInstalled && 'Cook is not installed' }, async () => {
-    const frames = await exportClipTables(particleRecipe({ flushRanking: true }), [1, 1 + 1 / 6, 1 + 2 / 6, 1 + 3 / 6, 1 + 4 / 6, 2]);
+    const frames = await exportClipTables(particleRecipe({ flushRanking: true, hiddenPost: true }), [1, 1 + 1 / 6, 1 + 2 / 6, 1 + 3 / 6, 1 + 4 / 6, 2]);
     let lengthChanges = 0;
+    let triangleLengthChanges = 0;
     for (let frame = 1; frame < frames.length; frame++) {
       const previous = frames[frame - 1];
       const tables = frames[frame];
       for (const name of Object.keys(tables)) lengthChanges += previous[name].byteLength === tables[name].byteLength ? 0 : 1;
+      triangleLengthChanges += previous.triangles.byteLength === tables.triangles.byteLength ? 0 : 1;
       const { ranges, sent, rebuilt } = roundTrip(previous, tables);
       assert.deepEqual(rebuilt, tables, `frame ${frame} patched is not the full export`);
       const total = Object.values(tables).reduce((sum, bytes) => sum + bytes.byteLength, 0);
@@ -293,6 +302,7 @@ test('the frames of the particle clip with flush ranking on change table lengths
       assert.ok(deltaByteLength(ranges) < total * 0.6, `frame ${frame} sent ${sent.byteLength} of ${total} bytes`);
     }
     assert.ok(lengthChanges > 0, 'the clip no longer changes a table length, so it does not pin the prefix patch');
+    assert.equal(triangleLengthChanges, 2, 'the triangle table shrinks when the post hides and grows back when it shows');
 });
 
 test('the frames of the particle clip keep every table the same length, so the delta sends less than half of them',

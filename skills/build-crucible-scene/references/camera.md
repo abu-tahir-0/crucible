@@ -35,6 +35,9 @@ Both are deterministic and apply to every render, `scene_look` included. They ar
 ] }
 ```
 
+To turn it off again, send `{ "type": "set-camera", "fStop": null }`; that clears `focusDistance` too.
+`focusDistance: null` clears only the focus plane.
+
 **Effect settings.** `effects.depthOfField.blur` (0 to 1, off at 0; the widest circle is 5 percent of the image
 height) and `focusDistance` (metres from the camera that stay sharp, 0.01 to 100000).
 

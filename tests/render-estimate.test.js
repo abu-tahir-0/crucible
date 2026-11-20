@@ -8,7 +8,7 @@ import { conciseJobResult } from '../scripts/mcp-response-format.mjs';
 import { planRenderSize } from '../src/budget.js';
 import { MAXIMUM_MEMORY_MIB } from '../src/agent-scene-capabilities.js';
 import {
-  CORRECTION_BOUND, HISTORY_LIMIT, addKernelCompile, correctionFromHistory, estimateRenderJob, historyWithJob, jobKind, parseHistory, renderReport, sceneSizeFrom,
+  CORRECTION_BOUND, HISTORY_LIMIT, addKernelCompile, correctionFromHistory, estimateOutputBytes, estimateRenderJob, historyWithJob, jobKind, outputByteBudgetProblem, parseHistory, renderReport, sceneSizeFrom,
 } from '../scripts/agent-render-estimate.mjs';
 
 const recipe = { format: 'crucible.scene', materials: [{ id: 'wood', map: 'planks' }, { id: 'steel', normalMap: 'dents' }, { id: 'plain' }] };
@@ -207,6 +207,31 @@ test('the reduced-frame fallback never asks for a --memory value over the ceilin
   assert.match(fallback, /Reduce the textures, the geometry, the frame size/);
   const [reachable] = renderReport({ settings: settingsFor({}), metrics: { ...metrics, requiredMemoryMiB: MAXIMUM_MEMORY_MIB, memoryBudgetMiB: 192 } }).fallbacks;
   assert.match(reachable, new RegExp(`Restart it with --memory ${MAXIMUM_MEMORY_MIB} or more`));
+});
+
+test('estimateRenderJob reports outputMiB and outputByteBudgetProblem catches oversized stills at submit (#2199)', () => {
+  const size = sceneSizeFrom(inspection({ nodeCount: 5, trianglesEach: 500 }), recipe);
+  const fitting = normalizeJobSettings({ kind: 'stills', width: 1280, height: 720, fps: 24, stillCount: 224 }, [], { format: 'crucible.scene' });
+  const compactEstimate = estimateRenderJob({ size, settings: fitting, backend: 'gpu' });
+  assert.ok(compactEstimate.outputMiB > 100 && compactEstimate.outputMiB <= 128);
+  assert.equal(outputByteBudgetProblem(fitting), undefined);
+
+  const smallSequence = normalizeJobSettings({ kind: 'stills', width: 640, height: 360, fps: 24, stillCount: 300 }, [], { format: 'crucible.scene' });
+  assert.equal(outputByteBudgetProblem(smallSequence), undefined);
+
+  const oversized = normalizeJobSettings({ kind: 'stills', width: 1280, height: 720, fps: 24, stillCount: 288 }, [], { format: 'crucible.scene' });
+  const problem = outputByteBudgetProblem(oversized);
+  assert.match(problem, /128 MiB/);
+  assert.match(problem, /224 frames/);
+  assert.match(problem, /motion\.start/);
+
+  const multiPass = normalizeJobSettings({ kind: 'stills', width: 1280, height: 720, fps: 24, stillCount: 120, passes: ['depth', 'normal'] }, [], { format: 'crucible.scene' });
+  assert.ok(estimateOutputBytes(multiPass) > estimateOutputBytes(fitting));
+  assert.match(outputByteBudgetProblem(multiPass), /combined output byte budget/);
+
+  const partialResult = conciseJobResult({ jobId: 'job-1', state: 'failed', reason: 'Job exceeds its combined output byte budget.', sourceRevision: 1, artifacts: [{ filename: 'frame-0.png', sha256: 'z' }] });
+  assert.equal(partialResult.state, 'failed');
+  assert.match(partialResult.reason, /combined output byte budget/);
 });
 
 test('a film whose first frame compiled kernels says so after its last frame, apart from trace time (#1949)', () => {
