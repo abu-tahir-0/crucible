@@ -776,7 +776,7 @@ export function createNodeConstraintEvaluator({ hierarchy, rootMatrix, constrain
   const compiledDrivers = drivers.map(driver => ({ ...driver, compiled: compileMotionExpression(driver.expression, nodeIds, 'Motion driver expression', kindsByNode) }));
   const compiledConstraints = constraints.map(constraint => ({
     ...constraint,
-    compiledInfluence: typeof constraint.influence === 'number' ? null : compileMotionExpression(constraint.influence, nodeIds, 'Motion constraint influence', kindsByNode),
+    compiledInfluence: typeof constraint.influence === 'number' ? null : compileMotionExpression(constraint.influence, nodeIds, `The influence of the ${constraint.type} constraint on node ${constraint.node}`, kindsByNode),
   }));
 
   function computeWorlds(locals) {

@@ -8,7 +8,7 @@ Every tool error names what failed and what to do next, so read the message befo
 | Message or sign | Cause | Do |
 |---|---|---|
 | `expectedRevision` rejected with `the current revision` and `scene_inspect returns it` | Another call changed the scene, or you used an old number. | `scene_inspect`, take its `revision`, resend the same batch. |
-| `camera.fStop` rejected with `a camera without effects.depthOfField.blur above 0; set blur to 0 or remove fStop` | Both depth of field controls are on. | Keep one: `fStop` on the camera, or `effects.depthOfField.blur`. See `camera.md`. |
+| `camera.fStop` rejected with `a camera without effects.depthOfField.blur above 0; set blur to 0 or set-camera fStop null` | Both depth of field controls are on. | Keep one: `fStop` on the camera, or `effects.depthOfField.blur`. To drop the camera one, send `{ "type": "set-camera", "fStop": null }`. See `camera.md`. |
 | `camera.focalLength` rejected with `only one of fov (degrees) or focalLength (millimetres with sensorWidth), such as fov 45; remove the other` | Both lens fields in one command. | Send only one; `focalLength` replaces `fov`. |
 | `bake.gridFog` rejected with `true only together with bake.irradianceGrid, such as irradianceGrid: true` | `gridFog` alone. | Add `irradianceGrid: true`. See `light.md`. |
 | A shot error with `reads motion up to` ... `but the motion lasts` | A timeline longer than a non-looping motion. | Lengthen the motion, set `loop: true` or a shot `motionStart`. |

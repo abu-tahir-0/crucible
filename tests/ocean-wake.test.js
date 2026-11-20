@@ -172,3 +172,15 @@ test('a wake point with a hole or a missing entry is refused', () => {
   delete holedList[1];
   assert.throws(() => normalizeWake({ points: holedList }), /wake\.points\[1\] must be four finite numbers/);
 });
+
+// #2730 keeps a posed sea across edits, but a sea a wake deforms follows the hull, so moving the hull must draw the new wake.
+test('moving the hull of a wake draws the wake of the new place, as a scene built there does', () => {
+  const scene = createAgentScene(boatRecipe({ height: 0.15 }, [0, 0, 4]));
+  const before = Array.from(scene.parts[0].geometry.positions);
+  scene.apply([{ type: 'set-node', id: 'hull', translation: [6, 0.2, 0] }], { expectedRevision: scene.revision });
+  const moved = boatRecipe({ height: 0.15 }, [0, 0, 4]);
+  moved.nodes[1].translation = [6, 0.2, 0];
+  const fresh = createAgentScene(moved);
+  assert.notDeepEqual(Array.from(scene.parts[0].geometry.positions), before, 'the wake moved with the hull');
+  assert.deepEqual(Array.from(scene.parts[0].geometry.positions), Array.from(fresh.parts[0].geometry.positions));
+});

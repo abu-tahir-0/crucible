@@ -1,5 +1,6 @@
 import { bounded, denseArray, knownKeys, valueFrom } from './motion-validation.js';
 import { invalidField } from './field-error.js';
+import { MOTION_PROPERTY_KIND_NAMES } from './motion-property-kinds.js';
 
 // Custom properties of nodes and bones: named control values that driver expressions read, such as an `open` slider
 // of 0 to 1 that moves a lid and dims a light. A property holds one number, a vector or a colour, stays inside its
@@ -7,7 +8,7 @@ import { invalidField } from './field-error.js';
 
 export const MAX_PROPERTIES = 32;
 export const MAX_PROPERTY_KEYS = 16;
-export const PROPERTY_KINDS = Object.freeze(['number', 'vector', 'color']);
+export const PROPERTY_KINDS = MOTION_PROPERTY_KIND_NAMES;
 const MAX_NAME_LENGTH = 64;
 const MAX_MAGNITUDE = 1e6;
 const DEFAULT_RANGES = { number: [-MAX_MAGNITUDE, MAX_MAGNITUDE], vector: [-MAX_MAGNITUDE, MAX_MAGNITUDE], color: [0, 1] };

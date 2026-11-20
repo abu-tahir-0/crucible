@@ -19,7 +19,7 @@ try {
   }));
   await page.goto('http://127.0.0.1:5173/skin-morph-smoke.html');
   const report = await page.evaluate(async () => {
-    const { CrucibleRenderer } = await import('/build/67.module.js');
+    const { CrucibleRenderer } = await import('/build/crucible.module.js');
     const { parseGltf } = await import('/build/gltf.js');
     const { skinnedStripAsset } = await import('/tests/fixtures/skinned-strip.js');
     const bytes = skinnedStripAsset((definition, append) => {

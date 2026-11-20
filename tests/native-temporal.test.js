@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  TEMPORAL_DEFAULTS, chooseNativeTemporal, createTemporalAccumulator, onlyCameraDiffers, readCameraView, temporalFrameSeed,
+  TEMPORAL_DEFAULTS, chooseNativeTemporal, clampToNeighbourhood, createTemporalAccumulator, measureNeighbourhoods, onlyCameraDiffers, readCameraView, temporalFrameSeed,
 } from '../scripts/agent-native-temporal.mjs';
 import { readFileSync } from 'node:fs';
 import { cookFile, cookModule, cookTest } from './support/cook.js';
@@ -149,7 +149,7 @@ test('a surface seen from another side than in the frame before starts again', (
 });
 
 test('a pixel that shows another surface than the frame before starts again', () => {
-  const accumulator = createTemporalAccumulator({ width: WIDTH, height: HEIGHT });
+  const accumulator = createTemporalAccumulator({ width: WIDTH, height: HEIGHT, edgeClampDeviations: 0 });
   const kernelParams = paramsForCamera([0, 0, 0]);
   accumulator.accumulate({ ...flatFrame(1), kernelParams });
   const next = flatFrame(0);
@@ -248,4 +248,65 @@ cookTest('a kernel parameter block packed by Cook passes the camera reader and t
   const shown = accumulator.accumulate({ ...frame, kernelParams });
   assert.equal(shown.color.length, PIXEL_COUNT * 3);
   assert.notEqual(shown.restarted, null, "the first frame starts the history");
+});
+
+function frameWithNearerPixel(nearerPixel, colorValue) {
+  const frame = flatFrame(colorValue);
+  frame.depth[nearerPixel] *= 0.5;
+  return frame;
+}
+
+test('a pixel on a depth step takes back clamped history, and starts again with the clamp switched off (#1214)', () => {
+  const nearerPixel = 5 * WIDTH + 7;
+  const kernelParams = paramsForCamera([0, 0, 0]);
+  const withClamp = createTemporalAccumulator({ width: WIDTH, height: HEIGHT });
+  withClamp.accumulate({ ...flatFrame(1), kernelParams });
+  const kept = withClamp.accumulate({ ...frameWithNearerPixel(nearerPixel, 0.2), kernelParams });
+  assert.equal(kept.historyShare, 1, 'the history of the surface next to it is taken back');
+  assert.ok(Math.abs(kept.color[nearerPixel * 3] - 0.2) < 1e-6, 'light brighter than the whole neighbourhood is clamped out, not ghosted in');
+
+  const withoutClamp = createTemporalAccumulator({ width: WIDTH, height: HEIGHT, edgeClampDeviations: 0 });
+  withoutClamp.accumulate({ ...flatFrame(1), kernelParams });
+  const restarted = withoutClamp.accumulate({ ...frameWithNearerPixel(nearerPixel, 0.2), kernelParams });
+  assert.equal(restarted.historyShare, (PIXEL_COUNT - 1) / PIXEL_COUNT);
+});
+
+test('a pixel that took history back at a depth step counts at most edgeHistoryFrames frames (#1214)', () => {
+  const nearerPixel = 5 * WIDTH + 7;
+  const showThroughStep = edgeHistoryFrames => {
+    const accumulator = createTemporalAccumulator({ width: WIDTH, height: HEIGHT, edgeHistoryFrames });
+    for (let frame = 0; frame < 6; frame++) {
+      accumulator.accumulate({ ...flatFrame(0), kernelParams: paramsForCamera([0, 0, 0], { seed: frame + 1 }) });
+    }
+    const stepped = frameWithNearerPixel(nearerPixel, 0);
+    for (let pixel = 0; pixel < PIXEL_COUNT; pixel++) {
+      stepped.color.fill(pixel % 2, pixel * 3, pixel * 3 + 3);
+    }
+    return accumulator.accumulate({ ...stepped, kernelParams: paramsForCamera([0, 0, 0], { seed: 9 }) }).color[nearerPixel * 3];
+  };
+  assert.ok(showThroughStep(2) > showThroughStep(1000) + 0.01, 'a short history lets the new frame count for more');
+});
+
+test('the neighbourhood clamp pulls a colour into the mean plus or minus the deviations of the 3x3 around it (#1214)', () => {
+  const width = 3;
+  const height = 3;
+  const color = new Float32Array(width * height * 3);
+  for (let pixel = 0; pixel < 9; pixel++) {
+    const value = pixel % 2 === 0 ? 0.2 : 0.4;
+    color.set([value, value, value], pixel * 3);
+  }
+  const { colorStatistics, depthRange } = measureNeighbourhoods({ color, depth: new Float32Array(9).fill(2), width, height });
+  assert.ok(Math.abs(colorStatistics[4 * 6] - (5 * 0.2 + 4 * 0.4) / 9) < 1e-6, 'luma mean of the centre pixel');
+  assert.deepEqual([depthRange[8], depthRange[9]], [2, 2]);
+  const [red, green, blue] = clampToNeighbourhood(5, 5, 5, colorStatistics, 4, 1);
+  assert.ok(red < 0.5 && green < 0.5 && blue < 0.5, 'a bright outlier is pulled down to the neighbourhood');
+  assert.ok(Math.abs(red - green) < 1e-6 && Math.abs(green - blue) < 1e-6, 'a grey stays grey');
+  const inside = clampToNeighbourhood(0.3, 0.3, 0.3, colorStatistics, 4, 1);
+  assert.deepEqual(inside.map(value => Number(value.toFixed(6))), [0.3, 0.3, 0.3]);
+});
+
+test('createTemporalAccumulator refuses an edge clamp or history cap it cannot use (#1214)', () => {
+  assert.throws(() => createTemporalAccumulator({ width: 4, height: 4, edgeClampDeviations: -1 }), /edgeClampDeviations/);
+  assert.throws(() => createTemporalAccumulator({ width: 4, height: 4, edgeHistoryFrames: 0 }), /edgeHistoryFrames/);
+  assert.doesNotThrow(() => createTemporalAccumulator({ width: 4, height: 4, edgeClampDeviations: 0 }));
 });

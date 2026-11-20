@@ -140,7 +140,8 @@ Every keyframe needs the same nonzero count of finite weights, and the target is
 ## MCP tool
 
 `scene_export_glb` exports the active MCP scene, recipe or imported asset, with `--jobs` configured.
-The file goes to `<jobs>/exports/<uuid>.glb`; the call takes no path and the result has the path, `bytes`, `sha256`, `parts` and `clips`.
+The file goes to `<jobs>/exports/<uuid>.glb`; the call takes no path and the result has the path, `bytes`, `sha256`, `parts`, `clips` and `omitted`.
+`omitted` lists each authored thing the file does not carry, such as `"motion tracks (3: camera 1, material 1, node 1)"`, `"camera"` and `"lights (2)"`; node tracks of bones that the baked clip carries are not listed. `scene_capabilities` topic `export` says what the GLB writes and drops.
 The newest eight files stay, counting the ones an earlier server run left in the folder, the GLB is at most 32 MiB, and `maxTextureSize` goes up to 4096.
 Without `clip` it writes the current pose: pattern and imported textures, skins, morph weights and IK as posed.
 `motionTime` seeks authored motion first and leaves the preview there, like `scene_look`.

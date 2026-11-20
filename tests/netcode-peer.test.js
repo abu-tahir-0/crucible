@@ -132,3 +132,26 @@ test('an older run of a peer is stale and a restart on the same id is followed',
   run(network, [observer], 20);
   assert.ok(Math.abs(observer.netcode.getEntityState('ball').position[0] - 5) < 0.01);
 });
+
+test('a peer that left frees its sender slot, so the table does not stay full (#2607)', () => {
+  const network = createLoopbackNetwork({ seed: 14 });
+  const observer = createPeer(network, 'observer');
+  run(network, [observer], 1);
+  const emptyState = tick => ({ type: 'peer-state', session: 'a', tick, entities: {} });
+  const past = Array.from({ length: 32 }, (_, index) => network.createTransport(`past-${index}`));
+  past.forEach((sender, index) => sender.send('observer', emptyState(index + 1)));
+  network.advance(FRAME_MILLISECONDS);
+  assert.equal(observer.netcode.stats.rejectedMessages, 0);
+  const refused = network.createTransport('refused');
+  refused.send('observer', emptyState(1));
+  network.advance(FRAME_MILLISECONDS);
+  assert.equal(observer.netcode.stats.rejectedMessages, 1, 'the 33rd sender is refused while 32 slots are held');
+
+  past.forEach(sender => sender.close());
+  run(network, [observer], 1);
+  const late = network.createTransport('late');
+  late.send('observer', emptyState(1));
+  network.advance(FRAME_MILLISECONDS);
+  assert.equal(observer.netcode.stats.rejectedMessages, 1, 'a peer that left should have freed its slot');
+  assert.equal(observer.netcode.stats.snapshotsReceived, 33);
+});

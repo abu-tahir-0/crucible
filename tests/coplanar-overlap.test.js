@@ -377,3 +377,22 @@ test('plates 2 mm apart fight, plates 100 mm and 250 mm apart do not, even in a 
   assert.deepEqual(platesApart(0.1), []);
   assert.deepEqual(platesApart(0.25), []);
 });
+
+// #2728: thousands of moving specks made every create and seek search them all for flush faces, about 110 s at the 2,000 limit.
+test('particle specks stay out of the flush ranking, and the wall and sign keep theirs across seeks', () => {
+  const sparks = { id: 'sparks', geometry: 'box', material: 'paint', scale: [0.05, 0.05, 0.05] };
+  const scene = createAgentScene({
+    ...recipe([wall, sign, sparks]),
+    particles: { systems: [{ node: 'sparks', count: 2000, floor: 0, lifetime: [1, 3], speed: [1, 8], spread: 180 }] },
+  });
+  const started = performance.now();
+  const partNamed = name => scene.parts.find(part => part.name === name);
+  for (const time of [0, 0.4, 1.3, 2.2, 0.4]) {
+    scene.sampleMotion(time);
+    assert.equal(flushOrderOf(partNamed('sparks')), null, `the specks are not ranked at ${time} s`);
+    assert.deepEqual(flushOrderOf(partNamed('sign')).ranges.map(range => range.rank), [0, 1], `the sign still wins at ${time} s`);
+    assert.ok(flushOrderOf(partNamed('wall')).geometry, `the wall is still cut at ${time} s`);
+  }
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed < 5000, `five seeks with 2,000 specks took ${elapsed.toFixed(0)} ms`);
+});

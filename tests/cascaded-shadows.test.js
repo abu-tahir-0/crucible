@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mat4, vec3 } from 'gl-matrix';
 import { createFragmentShader } from '../src/shaders.js';
-import { CascadedShadows, cascadeSplitDistances, createCascadedShadows, writeCascadeMatrix } from '../src/cascaded-shadows.js';
+import { CascadedShadows, cascadeSplitDistances, createCascadedShadows, planCascadeSplits, writeCascadeMatrix } from '../src/cascaded-shadows.js';
 
 const TOWARD_LIGHT = vec3.normalize(vec3.create(), [-0.7, 0.8, 0.35]);
 const RESOLUTION = 2048;
@@ -120,4 +120,48 @@ test('a moving camera keeps a far slice\'s map until the slice leaves it, and a 
   assert.equal(settled.radius, 80, 'a camera that stopped gets the exact fit');
   assert.equal(cascades.chooseFit(0, sphereAt(0), TOWARD_LIGHT).radius, 80);
   assert.equal(cascades.chooseFit(0, sphereAt(3), TOWARD_LIGHT).radius, 80, 'the nearest slice always fits exactly');
+});
+
+test('a view that reaches past maximumDistance gets a far slice that ends at the receiver reach', () => {
+  const near = planCascadeSplits(3, 0.5, 120, 150);
+  assert.equal(near.farLayer, false, 'a view inside maximumDistance keeps its three near slices');
+  assert.deepEqual(near.splits, cascadeSplitDistances(3, 0.5, 120));
+  const far = planCascadeSplits(3, 0.5, 3000, 150);
+  assert.equal(far.farLayer, true);
+  assert.equal(far.splits.length, 4);
+  assert.deepEqual(far.splits.slice(0, 3), cascadeSplitDistances(3, 0.5, 150), 'the near slices keep their sharpness');
+  assert.equal(far.splits[3], 3000);
+  assert.equal(planCascadeSplits(4, 0.5, 3000, 150).splits.length, 4, 'four slices stay four layers, the last one the far slice');
+  assert.equal(planCascadeSplits(1, 0.5, 3000, 150).splits.length, 2);
+});
+
+function farViewRenderer({ planeFar, boundsExtent }) {
+  const projection = mat4.perspective(mat4.create(), 1, 16 / 9, 0.5, planeFar);
+  const view = mat4.lookAt(mat4.create(), [0, 20, 300], [0, 20, -planeFar], [0, 1, 0]);
+  const inverseViewProjection = mat4.invert(mat4.create(), mat4.multiply(mat4.create(), projection, view));
+  return {
+    world: true,
+    activeLightDirection: [0.7, 0.4, 0.3],
+    shadowBounds: { target: [0, 150, -400], extent: boundsExtent },
+    inverseViewProjection,
+    view,
+    viewForward: [0, 0, -1],
+  };
+}
+
+test('far terrain inside the scene bounds falls inside the last shadow slice, not past every slice', () => {
+  const cascades = createCascadedShadows({ count: 3 });
+  cascades.fitToCamera(farViewRenderer({ planeFar: 8000, boundsExtent: 2300 }));
+  assert.equal(cascades.layerCount, 4);
+  const lastSplit = cascades.splits[3];
+  assert.ok(lastSplit > 2000, `the far slice reaches the far slope (view depth ${lastSplit})`);
+  const farSlopeDepth = 1200;
+  assert.ok(farSlopeDepth < lastSplit && farSlopeDepth > cascades.splits[2], 'a slope 1200 m away belongs to the far slice');
+  assert.ok(cascades.ranges[3] > 2300, 'casters up to the scene radius toward the sun reach the far slice');
+});
+
+test('a scene that fits inside maximumDistance keeps the layer count it asked for', () => {
+  const cascades = createCascadedShadows({ count: 3 });
+  cascades.fitToCamera(farViewRenderer({ planeFar: 100, boundsExtent: 60 }));
+  assert.equal(cascades.layerCount, 3);
 });

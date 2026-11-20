@@ -61,8 +61,27 @@ test('a scene without links keeps plain parts and a recipe shape without the new
 test('an unknown node in affects fails and names the next action', async () => {
   const recipe = sceneRecipe({ pointLights: [{ position: [0, 3, 0], affects: ['lefft'] }] });
   await loadAgentSceneModules(recipe);
-  assert.throws(() => createAgentScene(recipe), /pointLights\[0\]\.affects: lefft.*scene_inspect/);
-  assert.throws(() => createAgentScene(sceneRecipe({ keyAffects: ['nowhere'] })), /environment\.keyAffects: nowhere/);
+  assert.throws(() => createAgentScene(recipe), /environment\.pointLights\[0\]\.affects: got \["lefft"\].*geometry node IDs.*scene_inspect/);
+  assert.throws(() => createAgentScene(sceneRecipe({ keyAffects: ['nowhere'] })), /environment\.keyAffects: got \["nowhere"\]/);
+});
+
+test('every light kind names its own affects field, and a group or asset node is explained', async () => {
+  const cases = [
+    [{ spotLights: [{ position: [0, 3, 0], direction: [0, -1, 0] }, { position: [0, 3, 0], direction: [0, -1, 0], affects: ['left'] }, { position: [0, 3, 0], direction: [0, -1, 0], affects: ['rock_core'] }] }, 'environment.spotLights[2].affects'],
+    [{ areaLights: [{ position: [0, 3, 0], direction: [0, -1, 0], width: 1, height: 1, affects: ['rock_core'] }] }, 'environment.areaLights[0].affects'],
+    [{ pointLights: [{ position: [0, 3, 0], affects: ['rock_core'] }] }, 'environment.pointLights[0].affects'],
+    [{ keyAffects: ['rock_core'] }, 'environment.keyAffects'],
+  ];
+  for (const [environment, path] of cases) {
+    const recipe = sceneRecipe(environment);
+    recipe.nodes.push({ id: 'rock_core' });
+    await loadAgentSceneModules(recipe);
+    assert.throws(() => createAgentScene(recipe), error => {
+      assert.ok(error.message.startsWith(`${path}: got [\"rock_core\"]`), error.message);
+      assert.match(error.message, /geometry node IDs, not groups or assets/);
+      return true;
+    });
+  }
 });
 
 test('set-environment carries links, and removing a linked node is refused until the list changes', async () => {
@@ -71,7 +90,7 @@ test('set-environment carries links, and removing a linked node is refused until
   scene.apply([{ type: 'set-environment', environment: { keyAffects: ['left'], shadowCascades: 3 } }], { expectedRevision: scene.revision });
   assert.equal(maskOf(scene, 'right') & 1, 0);
   assert.equal(scene.environment.shadowCascades, 3);
-  assert.throws(() => scene.apply([{ type: 'remove-node', id: 'left' }], { expectedRevision: scene.revision }), /keyAffects: left/);
+  assert.throws(() => scene.apply([{ type: 'remove-node', id: 'left' }], { expectedRevision: scene.revision }), /keyAffects: got \["left"\]/);
   scene.apply([{ type: 'set-environment', environment: { keyAffects: ['right'] } }, { type: 'remove-node', id: 'left' }], { expectedRevision: scene.revision });
   assert.equal(maskOf(scene, 'floor') & 1, 0);
 });

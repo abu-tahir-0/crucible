@@ -111,7 +111,7 @@ test('a trimesh over the triangle limit is refused before it is copied', () => {
 });
 
 test('capabilities name the physics surface and the detector finds a section', () => {
-  assert.deepEqual(AGENT_SCENE_CAPABILITIES.physics.shapes, ['box', 'ball', 'capsule', 'convex', 'trimesh']);
+  assert.deepEqual(AGENT_SCENE_CAPABILITIES.physics.shapes, ['box', 'ball', 'capsule', 'cylinder', 'cone', 'convex', 'trimesh', 'compound']);
   assert.ok(AGENT_SCENE_CAPABILITIES.operations.includes('set-physics'));
   assert.equal(needsPhysics(recipe(dropOnFloor)), true);
   assert.equal(needsPhysics(recipe(undefined)), false);

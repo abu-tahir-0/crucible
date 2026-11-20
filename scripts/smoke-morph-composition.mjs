@@ -18,7 +18,7 @@ try {
   }));
   await page.goto('http://127.0.0.1:5173/morph-composition.html');
   const reports = await page.evaluate(async () => {
-    const { CrucibleRenderer, box, createMorphPose, createSkinPose } = await import('/build/67.module.js');
+    const { CrucibleRenderer, box, createMorphPose, createSkinPose } = await import('/build/crucible.module.js');
     const { mat4, mat3, quat, vec3 } = await import('/node_modules/gl-matrix/esm/index.js');
     const reports = [];
     for (const mode of ['normals', 'cancellation', 'benchmark']) {

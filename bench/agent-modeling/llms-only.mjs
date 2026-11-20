@@ -47,7 +47,7 @@ const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 function packArchive(destination) {
   // The pack runs with --ignore-scripts, so prepack never builds: without build/ the archive has no library
   // and the agent cannot import anything (found in the first valid agy run, 2026-11-07).
-  if (!existsSync(join(repository, 'build', '67.module.js'))) throw new Error('build/67.module.js is missing; run npm run build:lib first');
+  if (!existsSync(join(repository, 'build', 'crucible.module.js'))) throw new Error('build/crucible.module.js is missing; run npm run build:lib first');
   const output = execFileSync(npmExecutable, ['pack', '--ignore-scripts', '--json', '--pack-destination', destination], { cwd: repository, encoding: 'utf8', shell: process.platform === 'win32' });
   const packed = JSON.parse(output);
   return join(destination, (Array.isArray(packed) ? packed[0] : Object.values(packed)[0]).filename);

@@ -590,3 +590,20 @@ test('a client adopts a lower run id when only that run keeps arriving, and a sn
   assert.equal(client.netcode.stats.authorityRestarts, 1, 'the 30th in a row of the lower run is adopted');
   assert.equal(client.netcode.tick, 59);
 });
+
+// ----- A bad frame time (#2608) -----
+
+test('a client ignores a NaN, infinite or negative frame time and keeps drawing real positions', () => {
+  const network = createLoopbackNetwork({ latencyMilliseconds: 40 });
+  const server = createPeer({ role: 'authority', authority: 'server', transport: network.createTransport('server') });
+  server.netcode.addEntity('other', { owner: 'someone-else', tag: 'player' });
+  const client = createPeer({ role: 'client', serverId: 'server', transport: network.createTransport('client-a'), localEntityId: 'a', readInput: () => ({ moveX: 0, moveZ: 0 }) });
+  runFrames(network, [server, client], 100);
+  const before = client.netcode.getEntityState('other');
+  assert.ok(before.position.every(Number.isFinite));
+  for (const badDelta of [NaN, Infinity, -Infinity, -0.5, undefined]) client.netcode.update(badDelta);
+  const after = client.netcode.getEntityState('other');
+  assert.deepEqual(after, before, 'a bad frame time leaves the drawing clock where it was');
+  runFrames(network, [server, client], 50);
+  assert.ok(client.netcode.getEntityState('other').position.every(Number.isFinite));
+});

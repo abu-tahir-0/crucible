@@ -17,7 +17,7 @@ assert.equal(release.packageName, metadata.name);
 assert.equal(release.packageAlias, 'crucible');
 assert.equal(release.integrity, `sha512-${createHash('sha512').update(binary).digest('base64')}`);
 assert.ok(binary.length <= sizeBudgets.archiveBytes, `Library and optional addon wrappers must fit within the archive budget of ${sizeBudgets.archiveBytes} bytes.`);
-assert.ok((await readFile('build/67.module.js')).length < 150000, 'The core must exclude the optional asset decoder.');
+assert.ok((await readFile('build/crucible.module.js')).length < 150000, 'The core must exclude the optional asset decoder.');
 // The archive is measured against the base branch like a bundle. The release ceiling in budgets.json is reported, and
 // npm run smoke:package -- --absolute enforces it.
 async function checkArchiveSize(archiveBytes) {
