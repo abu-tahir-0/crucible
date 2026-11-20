@@ -60,7 +60,8 @@ export function initialOutputPaths(metafile) {
     if (reached.has(path)) continue;
     reached.add(path);
     for (const imported of metafile.outputs[path].imports) {
-      if (imported.kind === 'import-statement') pending.push(imported.path);
+      // An external package has no output entry of its own, so there is no chunk to follow.
+      if (imported.kind === 'import-statement' && !imported.external) pending.push(imported.path);
     }
   }
   return reached;

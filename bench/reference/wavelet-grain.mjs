@@ -1,5 +1,5 @@
 // Scores the wavelet denoiser against a high-sample reference on a flat-walled interior (issue #1335):
-//   node bench/reference/wavelet-grain.mjs [--samples 256] [--reference 4096] [--width 160] [--height 90] [--directory artifacts/1335]
+//   node bench/reference/wavelet-grain.mjs [--oidn] [--samples 256] [--reference 4096] [--width 160] [--height 90] [--directory artifacts/1335]
 // Draws the room once at the sample count and once at the reference count with the CPU path tracer (no denoiser), filters the
 // first with the settings listed in VARIANTS, and prints RMSE and flat-wall grain of each against the reference. Writes PNGs.
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -7,6 +7,7 @@ import { availableParallelism, constants, setPriority } from 'node:os';
 import { resolve } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { renderPathTracedImage, toneMapToRgba8 } from '../../src/path-tracer.js';
+import { denoiseWithOidn, findOidnBinary } from '../../packages/denoise-oidn/index.mjs';
 import { denoiseRadiance, DEFAULT_DENOISE_SETTINGS } from '../../src/path-tracer-denoise.js';
 
 function optionValue(name, fallback) {
@@ -190,6 +191,11 @@ async function main() {
   const rows = [{ name: 'unfiltered', linear: features.color }];
   for (const [name, settings] of Object.entries(VARIANTS)) {
     rows.push({ name, linear: denoiseRadiance({ width, height, ...features }, settings) });
+  }
+  // Pass --oidn to add the row `denoise: true` now produces when the OIDN package and its binary are installed (OIDN_DENOISE_PATH or the fetched vendor folder).
+  if (process.argv.includes('--oidn')) {
+    if (!findOidnBinary()) throw new Error('--oidn needs the OIDN binary: run node packages/denoise-oidn/fetch-oidn.mjs or set OIDN_DENOISE_PATH.');
+    rows.push({ name: 'oidn', linear: await denoiseWithOidn({ width, height, color: features.color, albedo: features.albedo, normal: features.normal }) });
   }
   const allSurfaces = features.depth.map(depthValue => (depthValue > 0 ? 1 : 0));
   const flat = flatMask(features, tone);

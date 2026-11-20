@@ -78,6 +78,8 @@ export function conciseJobResult(result) {
     sourceRevision: result.sourceRevision,
     artifacts: result.artifacts.map(artifact => without(artifact, ['sha256'])),
   };
+  if (result.state !== undefined) concise.state = result.state;
+  if (result.reason !== undefined) concise.reason = result.reason;
   if (result.metrics !== undefined) {
     concise.metrics = without(result.metrics, [...METRIC_DIAGNOSTICS, 'report']);
     if (result.metrics.report) concise.metrics.report = conciseRenderReport(result.metrics.report);

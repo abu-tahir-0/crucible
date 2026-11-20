@@ -1,5 +1,5 @@
 // A short note appended to every task prompt of a bench run (bench.mjs and run.mjs --prompt-note), so two runs can compare
-// prompt wording on the same tasks, for example the plain prompt against "use 67js, you may write it like three.js" (#986).
+// prompt wording on the same tasks, for example the plain prompt against "use Crucible, you may write it like three.js" (#986).
 // The note only adds words to the prompt: the run keeps the MCP arm and its tools, and the note is recorded in the result file.
 
 export const PROMPT_NOTE_MAX_LENGTH = 300;

@@ -6,10 +6,11 @@ import { CAMERA_LENS_FIELDS } from './camera.js';
 import { createSkeletonPose } from './skeleton-pose.js';
 import { createNodeConstraintEvaluator, normalizeConstraints, normalizeDrivers } from './node-constraints.js';
 import { normalizeProperties, propertyKinds } from './motion-properties.js';
+import { IK_SOLVER_TYPE_NAMES } from './motion-ik-solver-types.js';
 import { normalizeClipLayers } from './agent-clip-layers.js';
 import { normalizeKeyframeEasing } from './easing.js';
 import { normalizeFootLock } from './foot-lock.js';
-import { bounded, denseArray, finite, knownKeys, valueFrom } from './motion-validation.js';
+import { bounded, denseArray, finite, knownKeys, valueFrom, MAX_KEYS_PER_TRACK } from './motion-validation.js';
 import { agentSceneModule } from './agent-scene-modules.js';
 
 const PHYSICAL_SKY_TRACK_PROPERTIES = new Set(['sunElevation', 'sunRotation', 'turbidity', 'groundAlbedo', 'aerialPerspective', 'ozone']);
@@ -205,7 +206,7 @@ function ikKeyframes(input, size, duration, label) {
   if (!['LINEAR', 'STEP', 'SMOOTH'].includes(interpolation)) {
     throw invalidField(`${label}.interpolation`, interpolation, 'LINEAR, STEP or SMOOTH');
   }
-  denseArray(input.keyframes, 64, `${label}.keyframes`);
+  denseArray(input.keyframes, MAX_KEYS_PER_TRACK, `${label}.keyframes`);
   if (!input.keyframes.length) {
     throw invalidField(`${label}.keyframes`, input.keyframes, 'at least one keyframe, such as [{ "time": 0, "value": [0, 1, 0] }]');
   }
@@ -422,7 +423,7 @@ function normalizeIkSolver(input, position, nodes, visibleNodes, duration) {
     }
     return solver;
   }
-  throw invalidField(`${label}.type`, input?.type, 'one of two-bone, aim, chain or spline');
+  throw invalidField(`${label}.type`, input?.type, `one of ${IK_SOLVER_TYPE_NAMES.slice(0, -1).join(', ')} or ${IK_SOLVER_TYPE_NAMES.at(-1)}`);
 }
 
 function solverNodes(solver) {
@@ -584,7 +585,7 @@ export function normalizeAgentMotion(input, recipe) {
     if (track.property === 'visible' && interpolation !== 'STEP') {
       throw invalidField(`motion.tracks[${index}].interpolation`, interpolation, 'STEP, or the field left out, since a visible track is 1 (shown) or 0 (hidden) and cannot blend between them');
     }
-    denseArray(track.keyframes, 64, `motion.tracks[${index}].keyframes`);
+    denseArray(track.keyframes, MAX_KEYS_PER_TRACK, `motion.tracks[${index}].keyframes`);
     if (!track.keyframes.length) throw invalidField(`motion.tracks[${index}].keyframes`, [], 'one or more keyframes');
     keyframeCount += track.keyframes.length;
     if (keyframeCount > 2048) {

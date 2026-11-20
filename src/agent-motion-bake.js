@@ -1,11 +1,11 @@
 import { quat } from 'gl-matrix';
 import { invalidField } from './field-error.js';
-import { bounded, knownKeys } from './motion-validation.js';
+import { bounded, knownKeys, MAX_KEYS_PER_TRACK } from './motion-validation.js';
 
 // The bake-motion operation: sample the live local transform of chosen nodes (tracks, IK, constraints, drivers and
 // physics all included), write it back as keyframe tracks and drop the live sources, so the motion plays from keys alone.
 
-export const BAKE_LIMITS = Object.freeze({ maxNodes: 32, maxSamples: 512, maxKeysPerTrack: 64, defaultStep: 1 / 30, minimumStep: 1 / 120 });
+export const BAKE_LIMITS = Object.freeze({ maxNodes: 32, maxSamples: 512, maxKeysPerTrack: MAX_KEYS_PER_TRACK, defaultStep: 1 / 30, minimumStep: 1 / 120 });
 const DEFAULT_TOLERANCE = Object.freeze({ position: 0.001, angle: 0.1 });
 const MAX_MOTION_DURATION = 30;
 const BAKED_PROPERTIES = ['translation', 'rotation', 'scale'];

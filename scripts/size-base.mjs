@@ -13,7 +13,7 @@ const SIZE_NOTE_PATTERN = /^changes\/[^/]+\.size\.md$/;
 const SCRIPTS_FOLDER = fileURLToPath(new URL('.', import.meta.url));
 // A measuring method names the script that prints JSON for --json and the files that decide its numbers. A script that imports
 // the source relative to itself runs from the base checkout (runInBase), so it measures the base source.
-export const SIZE_METHOD = { script: join(SCRIPTS_FOLDER, 'measure-size.mjs'), runInBase: false, files: ['measure-size.mjs', 'size-base.mjs', 'size-budget.mjs', 'size-growth.mjs', 'size-chunk-names.mjs'] };
+export const SIZE_METHOD = { script: join(SCRIPTS_FOLDER, 'measure-size.mjs'), runInBase: false, files: ['measure-size.mjs', 'measure-archive.mjs', 'size-base.mjs', 'size-budget.mjs', 'size-growth.mjs', 'size-chunk-names.mjs', 'strip-glsl-comments.mjs'] };
 // CI caches this folder, keyed by the base commit, so a run on an unchanged base skips the second measurement.
 export const BASE_CACHE_FOLDER = 'node_modules/.cache/size-base';
 const MAX_OUTPUT_BYTES = 256 * 1024 * 1024;
@@ -59,7 +59,7 @@ export function readAcceptedBundles(baseRef, cwd = process.cwd()) {
 }
 
 // The archive: the base branch is built and packed in its own checkout by this checkout's script.
-export const ARCHIVE_METHOD = { script: join(SCRIPTS_FOLDER, 'measure-archive.mjs'), runInBase: false, files: ['measure-archive.mjs', 'size-base.mjs', '../config/vite.lib.config.js', 'build-mcp.mjs'] };
+export const ARCHIVE_METHOD = { script: join(SCRIPTS_FOLDER, 'measure-archive.mjs'), runInBase: false, files: ['measure-archive.mjs', 'size-base.mjs', 'size-budget.mjs', 'size-growth.mjs', '../config/vite.lib.config.js', 'build-mcp.mjs', 'strip-glsl-comments.mjs', 'vite-cook-optional.mjs'] };
 
 // The cache key holds everything that decides the base numbers: the base commit, the measuring method and the lock file.
 function cacheFileFor(baseRef, method) {

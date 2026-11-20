@@ -119,12 +119,12 @@ test('strict schema, final references, duplicate tracks and allocation bounds re
   assert.throws(() => normalizeAgentMotion(motion([{ ...track('emission', 0, 1), keyframes: [{ time: 0, value: 0, outTangent: 1 }] }]), recipe), /keyframes\[0\]\.outTangent: got 1; expected a field left out unless the track interpolation is CUBICSPLINE/);
   assert.throws(() => normalizeAgentMotion(motion([{ ...track('emission', 0, 1), interpolation: 'CUBICSPLINE' }]), recipe), /tangent/i);
   assert.throws(() => normalizeAgentMotion(motion(Array(129)), recipe), /bounded/);
-  const tooManyKeys = Array.from({ length: 65 }, (_, index) => ({ time: index / 64, value: 0 }));
+  const tooManyKeys = Array.from({ length: 257 }, (_, index) => ({ time: index / 256, value: 0 }));
   assert.throws(() => normalizeAgentMotion(motion([{ ...track('emission', 0, 1), keyframes: tooManyKeys }]), recipe), /bounded/);
   const manyNodes = Array.from({ length: 33 }, (_, index) => ({ id: `node-${index}` }));
   const manyTracks = manyNodes.map(node => ({
     kind: 'node', id: node.id, property: 'translation',
-    keyframes: Array.from({ length: 64 }, (_, index) => ({ time: index / 63, value: [0, 0, 0] })),
+    keyframes: Array.from({ length: 256 }, (_, index) => ({ time: index / 255, value: [0, 0, 0] })),
   }));
   assert.throws(() => normalizeAgentMotion(motion(manyTracks), { ...recipe, nodes: manyNodes }), /2048/);
   assert.throws(() => normalizeAgentMotion({ ...motion([]), duration: 31 }, recipe), /duration/);
@@ -177,4 +177,10 @@ test('unlit radiance uses the authored base color when emissiveColor is absent',
   assert.throws(() => sampler.sample(0.5), /unlit emissiveColor times emission/);
   assert.deepEqual(snapshot(output), before);
   assert.equal(sampler.sample(0.25).materials.get('bulb').emission, 50000);
+});
+
+test('a camera track holds 200 keys, so a 72 frame move needs no thinning', () => {
+  const keyframes = Array.from({ length: 200 }, (_, index) => ({ time: index / 199, value: 40 + index / 10 }));
+  const normalized = normalizeAgentMotion(motion([{ kind: 'camera', property: 'fov', keyframes }]), recipe);
+  assert.equal(normalized.tracks[0].keyframes.length, 200);
 });

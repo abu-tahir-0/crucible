@@ -61,7 +61,8 @@ Imported clip and authored motion clocks compose through one atomic pose transac
 ```
 
 These samples require authored motion. Nonlooping motion holds its endpoint after the duration. Looping motion wraps the requested time.
-`rendererTime` controls shader animation independently and defaults to zero.
+`rendererTime` is the clock a post pass or shader that reads `time` sees. When a shot gives none it is the shot's `motionTime` (or its `animation.time`), so the effect moves with the pose like a render job's; with neither it is zero. A user post pass reads the pose's `motionTime` as its clock whenever the shot has one, as in a look and a render job frame, so a pass anchored to a moving part stays on it; `rendererTime` then sets `time` for everything else that reads it. Give `rendererTime` to set that apart from the pose.
+A shot camera takes `eye`, `target`, `up`, `fov`, `near`, `far`, `projection` (`perspective` or `orthographic`) and `orthoScale`, and the shot draws it as a look does. Lens fields (`focalLength`, `sensorWidth`) are not accepted here; pass `fov`.
 Camera fields override only the private shot camera. They do not author tracks or edit the source camera.
 
 ## Compare branches and read labels

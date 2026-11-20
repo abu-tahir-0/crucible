@@ -493,20 +493,6 @@ optional `Ready` expression the driver waits for, and `Drive`.
 - Source: `bin/crucible-addon-check.mjs`
 - Drive: none: not a page
 
-### `67js-mcp`
-- Name: Old name of crucible-mcp, kept as an alias
-- Surface: CLI
-- Reach: command `npx 67js-mcp`
-- Source: `bin/67js-mcp.mjs`
-- Drive: none: not a page
-
-### `67js-addon-check`
-- Name: Old name of crucible-addon-check, kept as an alias
-- Surface: CLI
-- Reach: command `npx 67js-addon-check`
-- Source: `bin/67js-addon-check.mjs`
-- Drive: none: not a page
-
 ### `npm-dev`
 - Name: Vite dev server on 127.0.0.1:5173 that serves every page above
 - Surface: CLI

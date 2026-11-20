@@ -60,21 +60,19 @@
     "docs/skeleton-pose.md",
     "docs/verification.md"
   ],
-  "main": "./build/67.module.js",
-  "module": "./build/67.module.js",
+  "main": "./build/crucible.module.js",
+  "module": "./build/crucible.module.js",
   "bin": {
     "crucible-mcp": "./bin/crucible-mcp.mjs",
     "crucible": "./bin/crucible.mjs",
-    "crucible-addon-check": "./bin/crucible-addon-check.mjs",
-    "67js-mcp": "./bin/67js-mcp.mjs",
-    "67js-addon-check": "./bin/67js-addon-check.mjs"
+    "crucible-addon-check": "./bin/crucible-addon-check.mjs"
   },
   "engines": {
     "node": ">=20.19.0"
   },
   "exports": {
-    ".": "./build/67.module.js",
-    "./standalone": "./build/67.standalone.js",
+    ".": "./build/crucible.module.js",
+    "./standalone": "./build/crucible.standalone.js",
     "./addons/model": "./build/model.js",
     "./addons/nature": "./build/nature.js",
     "./addons/motion": "./build/motion.js",

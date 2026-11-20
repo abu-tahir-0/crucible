@@ -151,13 +151,13 @@ test('encoder is a bounded enum and audio is a plain file name, both video only'
   const controller = await controllerFor(context);
   const hostileEncoders = ['libx264', 'nvenc -f lavfi', 'cpu; rm -rf', '', null, 7, ['cpu'], { name: 'cpu' }];
   for (const encoder of hostileEncoders) await assert.rejects(controller.submit(submission({ encoder })), /encoder/);
-  await assert.rejects(controller.submit(submission({ kind: 'image', encoder: 'cpu' })), /encoder needs kind video/);
+  await assert.rejects(controller.submit(submission({ kind: 'image', fps: undefined, duration: undefined, encoder: 'cpu' })), /encoder needs kind video/);
   const hostileFiles = ['../score.wav', '..\\score.wav', 'C:\\score.wav', '/etc/passwd.wav', 'http://example.com/a.wav', 'file:score.wav',
     'concat:a.wav|b.wav', '-i score.wav', 'score.wav\0.mp3', 'score.exe', 'score', '.wav', 'a b.wav', 'a'.repeat(70) + '.wav', ['score.wav'], { toString: () => 'score.wav' }, 7];
   for (const file of hostileFiles) await assert.rejects(controller.submit(submission({ audio: { file } })), /audio/);
   await assert.rejects(controller.submit(submission({ audio: { file: 'score.wav', gain: 2 } })), /Unknown audio field/);
   await assert.rejects(controller.submit(submission({ audio: { file: 'score.wav', offset: -1 } })), /audio offset/);
-  await assert.rejects(controller.submit(submission({ kind: 'image', audio: { file: 'score.wav' } })), /audio needs kind video/);
+  await assert.rejects(controller.submit(submission({ kind: 'image', fps: undefined, duration: undefined, audio: { file: 'score.wav' } })), /audio needs kind video/);
   for (const track of ['wav', 'AAC', '', null, 7, ['pcm']]) {
     await assert.rejects(controller.submit(submission({ audio: { file: 'score.wav', track } })), /audio.track/);
   }

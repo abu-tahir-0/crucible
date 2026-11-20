@@ -66,25 +66,6 @@ function distance(first, second) {
   return Math.hypot(first[0] - second[0], first[1] - second[1], first[2] - second[2]);
 }
 
-test('a non-finite or negative frame time is ignored instead of freezing entities at NaN', () => {
-  const network = createLoopbackNetwork({ seed: 3, latencyMilliseconds: 10 });
-  const server = createPeer({ role: 'authority', authority: 'server', transport: network.createTransport('server') });
-  server.netcode.addEntity('crate', { tag: 'prop', state: { position: [0, 0, 0] } });
-  const client = createPeer({ role: 'client', serverId: 'server', transport: network.createTransport('client-a') });
-  for (let frame = 0; frame < 60; frame += 1) {
-    network.advance(FRAME_MILLISECONDS);
-    server.runtime.step(FRAME_MILLISECONDS);
-    client.runtime.step(FRAME_MILLISECONDS);
-  }
-  const position = client.netcode.getEntityState('crate').position;
-  assert.ok(position.every(Number.isFinite));
-  client.netcode.update(NaN);
-  client.netcode.update(-1);
-  for (let frame = 0; frame < 5; frame += 1) client.netcode.update(0.02);
-  const recovered = client.netcode.getEntityState('crate').position;
-  assert.ok(recovered.every(Number.isFinite), `position after a bad frame time: ${recovered}`);
-});
-
 test('a predicted local player converges to the authority after reconciliation', () => {
   const { server, clientA, clientB } = runSession();
   for (const [client, id] of [[clientA, 'a'], [clientB, 'b']]) {
@@ -608,4 +589,21 @@ test('a client adopts a lower run id when only that run keeps arriving, and a sn
   network.advance(1);
   assert.equal(client.netcode.stats.authorityRestarts, 1, 'the 30th in a row of the lower run is adopted');
   assert.equal(client.netcode.tick, 59);
+});
+
+// ----- A bad frame time (#2608) -----
+
+test('a client ignores a NaN, infinite or negative frame time and keeps drawing real positions', () => {
+  const network = createLoopbackNetwork({ latencyMilliseconds: 40 });
+  const server = createPeer({ role: 'authority', authority: 'server', transport: network.createTransport('server') });
+  server.netcode.addEntity('other', { owner: 'someone-else', tag: 'player' });
+  const client = createPeer({ role: 'client', serverId: 'server', transport: network.createTransport('client-a'), localEntityId: 'a', readInput: () => ({ moveX: 0, moveZ: 0 }) });
+  runFrames(network, [server, client], 100);
+  const before = client.netcode.getEntityState('other');
+  assert.ok(before.position.every(Number.isFinite));
+  for (const badDelta of [NaN, Infinity, -Infinity, -0.5, undefined]) client.netcode.update(badDelta);
+  const after = client.netcode.getEntityState('other');
+  assert.deepEqual(after, before, 'a bad frame time leaves the drawing clock where it was');
+  runFrames(network, [server, client], 50);
+  assert.ok(client.netcode.getEntityState('other').position.every(Number.isFinite));
 });

@@ -2,7 +2,9 @@
 // Where Chrome, playwright or an adapter is missing the test skips on a developer machine and fails on CI, as withDevServerPage does.
 import { spawn } from 'node:child_process';
 import { freePort } from './free-port.js';
-import { skipOrThrow } from './dev-server-browser.js';
+import { openBlankPage, skipOrThrow } from './dev-server-browser.js';
+
+export { BLANK_PAGE_PATH } from './dev-server-browser.js';
 
 const WEBGPU_ARGUMENTS = [process.platform === 'win32' ? '--use-angle=d3d11' : '--use-angle=swiftshader', '--enable-unsafe-webgpu', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-features=Vulkan'];
 
@@ -37,21 +39,6 @@ async function launchWebGpuChrome(chromium, { bundled = false } = {}) {
     }
   }
   return chromium.launch({ headless: true, args: [...WEBGPU_ARGUMENTS, ...BUNDLED_WINDOWS_ARGUMENTS] });
-}
-
-// The tests import /src modules into a blank page of the dev server's origin. The home page would start the live hero, whose
-// world load keeps a software adapter (SwiftShader on CI) busy for minutes beside the tracer under test (#2684).
-export const BLANK_PAGE_PATH = '/__webgpu-test-page.html';
-const BLANK_PAGE_HEADERS = {
-  'content-type': 'text/html; charset=utf-8',
-  'cross-origin-opener-policy': 'same-origin',
-  'cross-origin-embedder-policy': 'require-corp',
-};
-
-async function openBlankPage(page, port) {
-  const address = `http://127.0.0.1:${port}${BLANK_PAGE_PATH}`;
-  await page.route(address, route => route.fulfill({ status: 200, headers: BLANK_PAGE_HEADERS, body: '<!doctype html><title>WebGPU test</title>' }));
-  await page.goto(address);
 }
 
 /** Runs `body(page)` on the dev server's page in headless Chrome with a WebGPU adapter, and cleans up. `{ bundled: true }` uses the bundled Chromium, not the Chrome install. */

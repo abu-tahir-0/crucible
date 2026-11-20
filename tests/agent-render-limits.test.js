@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { MAXIMUM_JOB_DEADLINE_MS, jobDeadlineMs, normalizeJobSettings } from '../scripts/agent-render-jobs.mjs';
+import { MAXIMUM_JOB_DEADLINE_MS, MAXIMUM_JOB_FRAME_BYTES, MAXIMUM_JOB_OUTPUT_BYTES, jobDeadlineMs, normalizeJobSettings } from '../scripts/agent-render-jobs.mjs';
 import { MAXIMUM_JOB_FPS, MAXIMUM_JOB_FRAMES } from '../src/agent-scene-capabilities.js';
 import { DEFAULT_ENCODER_TIMEOUT_MS } from '../scripts/frame-encoder.mjs';
 
@@ -29,6 +29,8 @@ test('capabilities report the job limits from the validator constants, not liter
   const source = await readFile(new URL('../scripts/agent-runtime.mjs', import.meta.url), 'utf8');
   assert.match(source, /maximumFps: MAXIMUM_JOB_FPS/);
   assert.match(source, /maximumFrames: MAXIMUM_JOB_FRAMES/);
+  assert.match(source, /maximumOutputBytes: MAXIMUM_JOB_OUTPUT_BYTES/);
+  assert.match(source, /maximumFrameBytes: MAXIMUM_JOB_FRAME_BYTES/);
   const videoSettings = { kind: 'video', width: 64, height: 64, duration: 1 };
   assert.equal(normalizeJobSettings({ ...videoSettings, fps: MAXIMUM_JOB_FPS }, [], null).fps, MAXIMUM_JOB_FPS);
   assert.throws(() => normalizeJobSettings({ ...videoSettings, fps: MAXIMUM_JOB_FPS + 1 }, [], null), /fps/);

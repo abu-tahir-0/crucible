@@ -8,7 +8,7 @@ import { resolveVolumeFog } from './volumetric.js';
 import { resolveFogDetail } from './fog-field.js';
 import { resolveLocalVolumesWith } from './local-volume-resolve.js';
 import { LIQUID_OPTICS, resolveLiquidOptics } from './liquid-optics.js';
-import { createLightingSetupMap, createCatalogEnvironmentMap, lightingSetupFields } from './lighting-setups.js';
+import { createLightingSetupMap, createCatalogEnvironmentMap, lightingSetupFields, setupMapShowsBackground } from './lighting-setups.js';
 import { agentSceneModule } from './agent-scene-modules.js';
 import { lightShapeSupport, postStepSupport } from './shader-registry.js';
 import { VIEW_TRANSFORM_NAMES, LOOK_NAMES } from './view-transform-names.js';
@@ -421,7 +421,7 @@ export function agentEnvironmentMap(environment) {
   return createLightingSetupMap(environment.setup, {
     intensity: environment.environmentIntensity,
     rotation: environment.environmentRotation,
-    showBackground: environment.world,
+    showBackground: setupMapShowsBackground(environment),
   });
 }
 

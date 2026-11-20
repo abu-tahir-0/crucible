@@ -270,6 +270,9 @@ function instanceCount(object, state) {
 
 function importMesh(object, limits, state) {
   checkMesh(object, state);
+  if (!object.material) {
+    throw new ThreeBridgeError(`${describe(object)} has ${object.material === null ? 'null' : 'no'} material. Assign a MeshStandardMaterial to mesh.material, or pass skipUnsupported: true to leave the object out.`);
+  }
   const materials = Array.isArray(object.material) ? object.material : [object.material];
   const groups = Array.isArray(object.material) ? object.geometry.groups : [{ start: 0, count: Infinity, materialIndex: 0 }];
   if (!groups?.length) {
@@ -279,7 +282,7 @@ function importMesh(object, limits, state) {
   if (state.parts.length + instances * groups.length > limits.maxParts) {
     throw new ThreeBridgeError(`${describe(object)} would take the tree past ${limits.maxParts} parts (${instances} instances x ${groups.length} materials). Raise maxParts (up to ${HARD_LIMITS.maxParts}) or import fewer instances.`);
   }
-  const cacheKey = materials.some(material => material.vertexColors);
+  const cacheKey = materials.some(material => material?.vertexColors);
   const cached = state.geometries.get(object.geometry) ?? new Map();
   if (!cached.has(cacheKey)) cached.set(cacheKey, importGeometry(object, cacheKey, limits, state));
   state.geometries.set(object.geometry, cached);
@@ -290,7 +293,7 @@ function importMesh(object, limits, state) {
   const found = [];
   for (const group of groups) {
     const material = materials[group.materialIndex];
-    if (!material) throw new ThreeBridgeError(`${describe(object)} geometry.groups uses materialIndex ${group.materialIndex} but the material array has ${materials.length}. Fix the group.`);
+    if (!material) throw new ThreeBridgeError(`${describe(object)} geometry.groups uses materialIndex ${group.materialIndex} but the material array has no material there (${materials.length} entries). Fix the group or fill that entry of mesh.material.`);
     if (!state.materials.has(material)) state.materials.set(material, importMaterial(material, object, state));
     const geometry = Number.isFinite(group.count)
       ? { ...whole, indices: whole.indices.slice(group.start, group.start + group.count) }
@@ -413,11 +416,12 @@ function buildTexture(THREE, descriptor, label, state) {
   return state.textures.get(descriptor);
 }
 
-function buildMaterial(THREE, source, label, state) {
+function buildMaterial(THREE, source, label, state, hasVertexColors) {
   const usesLayers = LAYER_FIELDS.some(([, field]) => source[field] !== undefined);
   const MaterialClass = usesLayers && typeof THREE.MeshPhysicalMaterial === 'function' ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
   if (usesLayers && MaterialClass === THREE.MeshStandardMaterial) state.warnings.push(`${label}: the THREE namespace has no MeshPhysicalMaterial, so clearcoat, transmission and ior are dropped.`);
   const material = new MaterialClass();
+  material.vertexColors = hasVertexColors;
   material.color.setRGB(...source.color);
   material.metalness = source.metallic ?? 0;
   material.roughness = source.roughness ?? 1;
@@ -454,7 +458,8 @@ function buildMaterial(THREE, source, label, state) {
 /**
  * Builds a Group of Mesh objects from Crucible parts and returns `{ object, warnings }`. THREE is the namespace of three.js
  * (`import * as THREE from 'three'`). Parts that share a geometry object share a BufferGeometry, and parts that share a
- * material object share a material. Each mesh takes its part matrix as is (`matrixAutoUpdate` is off), so the world
+ * material object share a material, except that a part with `geometry.colors` gets a variant with `vertexColors` on, so three.js reads
+ * the colours, and a part without them keeps the plain one. Each mesh takes its part matrix as is (`matrixAutoUpdate` is off), so the world
  * matrix matches the part exactly; copy `mesh.matrix` into position, quaternion and scale to animate it.
  * Options: `maxParts`, `maxVertices`, `name` of the group.
  */
@@ -475,8 +480,11 @@ export function toThreeObject(parts, THREE, options = {}) {
     const label = checkPart(part, index, limits);
     if (part.skin || part.morph) state.warnings.push(`${label}: skin and morph targets are not exported to three.js objects.`);
     if (!geometries.has(part.geometry)) geometries.set(part.geometry, buildGeometry(THREE, part.geometry));
-    if (!materials.has(part.material)) materials.set(part.material, buildMaterial(THREE, part.material, label, state));
-    const mesh = new THREE.Mesh(geometries.get(part.geometry), materials.get(part.material));
+    const hasVertexColors = Boolean(part.geometry.colors);
+    const variants = materials.get(part.material) ?? new Map();
+    materials.set(part.material, variants);
+    if (!variants.has(hasVertexColors)) variants.set(hasVertexColors, buildMaterial(THREE, part.material, label, state, hasVertexColors));
+    const mesh = new THREE.Mesh(geometries.get(part.geometry), variants.get(hasVertexColors));
     mesh.name = part.name ?? `part-${index}`;
     mesh.matrixAutoUpdate = false;
     mesh.matrix.fromArray(Array.from(part.matrix));
