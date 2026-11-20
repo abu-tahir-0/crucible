@@ -28,7 +28,7 @@ test('the cache folder follows the platform, an absolute override, and the off s
   assert.equal(shaderCacheDirectory({ XDG_CACHE_HOME: '/xdg' }, 'linux'), join('/xdg', 'crucible', 'shader-cache'));
   assert.match(shaderCacheDirectory({}, 'linux'), /\.cache[\\/]crucible[\\/]shader-cache$/);
   assert.equal(shaderCacheDirectory({ CRUCIBLE_SHADER_CACHE: join(tmpdir(), 'mine') }, 'linux'), join(tmpdir(), 'mine'));
-  assert.equal(shaderCacheDirectory({ SIXTYSEVENJS_SHADER_CACHE: join(tmpdir(), 'legacy') }, 'linux'), join(tmpdir(), 'legacy'));
+  assert.match(shaderCacheDirectory({ SIXTYSEVENJS_SHADER_CACHE: join(tmpdir(), 'legacy') }, 'linux'), /\.cache[\\/]crucible[\\/]shader-cache$/);
 });
 
 test('CRUCIBLE_SHADER_CACHE=0 or off turns the cache off, and a relative folder says what to pass', () => {

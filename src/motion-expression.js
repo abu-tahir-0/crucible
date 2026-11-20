@@ -1,4 +1,5 @@
 import { knownKeys } from './motion-validation.js';
+import { DRIVER_VARIABLE_KIND_NAMES } from './motion-driver-variable-kinds.js';
 import { COMPONENTS, compileNode, createOperators, isPlainObject, liftOperator, scalarValue } from './expression.js';
 
 // Bounded motion expressions: the motion context of the one expression language in expression.js, for drivers and
@@ -16,6 +17,7 @@ import { COMPONENTS, compileNode, createOperators, isPlainObject, liftOperator, 
 // belong to fields and are rejected here. sin and cos take radians.
 
 export const MAX_EXPRESSION_NODES = 64;
+export const MOTION_EXPRESSION_SOURCE_NAMES = Object.freeze(['time', 'node', ...DRIVER_VARIABLE_KIND_NAMES]);
 export const MAX_EXPRESSION_DEPTH = 8;
 const READ_PROPERTIES = ['translation', 'rotation', 'scale'];
 
@@ -85,7 +87,7 @@ const MOTION_DIALECT = Object.freeze({
   maxNodes: MAX_EXPRESSION_NODES,
   maxDepth: MAX_EXPRESSION_DEPTH,
   operators: OPERATORS,
-  sourceNames: Object.freeze(['time', 'node', 'custom', 'distance', 'rotationDifference']),
+  sourceNames: MOTION_EXPRESSION_SOURCE_NAMES,
   reject: (message, state) => new TypeError(`${state.label}: ${message}`),
   compileInput,
 });

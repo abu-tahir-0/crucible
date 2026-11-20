@@ -38,7 +38,7 @@ test('the dev release names the package version and commit in the shape the home
   assertHomeAccepts(release);
   assert.equal(release.version, '1.2.3');
   assert.equal(release.tarball, '/releases/codepawlhq-crucible-1.2.3.tgz');
-  assert.equal(release.module, '/releases/1.2.3/67.module.js');
+  assert.equal(release.module, '/releases/1.2.3/crucible.module.js');
   assert.equal(release.registryPublished, false);
 });
 

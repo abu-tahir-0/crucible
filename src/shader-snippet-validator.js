@@ -234,19 +234,29 @@ function findFunctions(tokens) {
   return functions;
 }
 
-// Loop iterations of one run of tokens[start..end]: a loop multiplies its body, a call to a function of the snippet adds that function's work.
+// Loop iterations of one run of tokens[start..end]: a loop multiplies its body, a call to a function of the snippet adds that
+// function's own loop work (nothing when it has no loop). Returns { total, terms }: total counts loops only (0 for loop-free code),
+// terms names each part that adds up, such as "2 x (64)" or "blur() = 64".
 function loopWork(tokens, start, end, loopsByIndex, functions, working, workOfFunction) {
   let total = 0;
+  const terms = [];
   for (let index = start; index < end; index++) {
     const loop = loopsByIndex.get(index);
     if (loop) {
-      total += loop.iterations * loopWork(tokens, loop.bodyStart + 1, loop.bodyEnd, loopsByIndex, functions, working, workOfFunction);
+      const body = loopWork(tokens, loop.bodyStart + 1, loop.bodyEnd, loopsByIndex, functions, working, workOfFunction);
+      const bodyWork = Math.max(1, body.total);
+      total += loop.iterations * bodyWork;
+      terms.push(body.terms.length === 0 ? `${loop.iterations}` : `${loop.iterations} x (${body.terms.join(' + ')})`);
       index = loop.bodyEnd;
     } else if (functions.has(tokens[index].text) && tokens[index + 1]?.text === '(' && !working.has(tokens[index].text)) {
-      total += workOfFunction(tokens[index].text);
+      const helper = workOfFunction(tokens[index].text);
+      if (helper.total > 0) {
+        total += helper.total;
+        terms.push(`${tokens[index].text}() = ${helper.total}`);
+      }
     }
   }
-  return Math.max(1, total);
+  return { total, terms };
 }
 
 function checkLoopWork(tokens, loops, text, label) {
@@ -266,7 +276,7 @@ function checkLoopWork(tokens, loops, text, label) {
   let worst = 1;
   let worstName = null;
   for (const name of functions.keys()) {
-    const work = workOfFunction(name);
+    const work = workOfFunction(name).total;
     if (work > worst) {
       worst = work;
       worstName = name;
@@ -274,7 +284,8 @@ function checkLoopWork(tokens, loops, text, label) {
   }
   if (worst > SNIPPET_LIMITS.maxLoopWork) {
     const start = functions.get(worstName).start;
-    throw new ShaderSnippetError(label, `Function ${worstName} can run ${worst} loop iterations per pixel, over the limit of ${SNIPPET_LIMITS.maxLoopWork}.`,
+    const sum = memo.get(worstName).terms.join(' + ');
+    throw new ShaderSnippetError(label, `Function ${worstName} can run ${worst} loop iterations per pixel, over the limit of ${SNIPPET_LIMITS.maxLoopWork}. It adds up as ${sum}.`,
       'Shorten the loops or the nesting; nested loops multiply and every call to a helper counts its loops again.', positionOf(text, tokens[start].index));
   }
   return worst;

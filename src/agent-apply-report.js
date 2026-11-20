@@ -48,6 +48,15 @@ function mergePatch(current, patch) {
   return merged;
 }
 
+// A null fStop clears depth of field (and its focusDistance); a null focusDistance clears itself.
+function clearNullLensFields(camera, patch) {
+  if (patch.fStop === null) {
+    delete camera.fStop;
+    delete camera.focusDistance;
+  }
+  if (patch.focusDistance === null) delete camera.focusDistance;
+}
+
 function fieldNames(operation, skipped) {
   return Object.keys(operation).filter(key => !skipped.includes(key));
 }
@@ -90,6 +99,7 @@ function describeOperation(working, operation, maxText) {
     if (patchHolds(working[section], patch)) return { warning: 'no change, values already set' };
     const names = Object.keys(patch).filter(key => !patchHolds(working[section]?.[key], patch[key]));
     working[section] = mergePatch(working[section] ?? {}, patch);
+    if (type === 'set-camera') clearNullLensFields(working.camera, patch);
     return { changed: shortList(names, maxText) };
   }
   if (type === 'set-node' || type === 'set-material') {

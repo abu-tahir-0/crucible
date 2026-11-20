@@ -23,25 +23,24 @@ async function loadOidnPackage() {
 }
 
 /**
- * What a job's `settings.renderer.denoise` becomes. "oidn" needs the optional package and its binary; without them the
- * wavelet filter runs instead and `note` says so, so the job result never claims a denoiser that did not run.
- * `preferOidn` is set for the native backend: there the default (`true`) means OIDN with the albedo and normal guides when
- * it is installed, and the GPU a-trous filter of the native tracer when it is not ("atrous", biased: it smooths), with a note
- * that says why. An explicit "oidn" falls back the same way on native. Other backends fall back to the wavelet filter, and
- * explicit values ("wavelet", "none", false) keep their meaning everywhere.
+ * What a job's `settings.renderer.denoise` becomes. `true` (the default) and "oidn" mean OIDN with the albedo and normal
+ * guides, which needs the optional package and its binary. Without them `note` says so and a filter runs instead, so the
+ * job result never claims a denoiser that did not run: the CPU wavelet filter, or on the native backend (`native`) the GPU
+ * a-trous filter ("atrous", biased: it smooths). `keepWavelet` makes a missing OIDN fall back to the wavelet filter on
+ * native too; the `final` quality tier sets it, because it always ran the wavelet filter before it used OIDN. An explicit
+ * "wavelet", "none" or false keeps its meaning everywhere, and OIDN is not loaded for them. The samples a job asked for are
+ * never changed here: only an explicit "oidn" without `samples` gets OIDN_DEFAULT_SAMPLES, in agent-render-jobs.mjs.
  */
-export async function chooseDenoiser(requested, { preferOidn = false, loadOidn = loadOidnPackage } = {}) {
-  const defaultsToOidn = preferOidn && requested === true;
-  if (requested !== 'oidn' && !defaultsToOidn) return { denoise: requested };
+export async function chooseDenoiser(requested, { native = false, keepWavelet = false, loadOidn = loadOidnPackage } = {}) {
+  const isDefault = requested === true;
+  if (requested !== 'oidn' && !isDefault) return { denoise: requested };
   const denoiser = await loadOidn();
   if (denoiser) {
-    return defaultsToOidn
-      ? { denoise: 'oidn', denoiser, note: 'The native backend denoises with OIDN and the albedo and normal guides by default.' }
-      : { denoise: 'oidn', denoiser };
+    return { denoise: 'oidn', denoiser };
   }
   const reason = `needs ${OIDN_PACKAGE}, and its binary: npm install it, run \`node node_modules/@codepawlhq/crucible-denoise-oidn/fetch-oidn.mjs\`, or set OIDN_DENOISE_PATH`;
-  const lead = defaultsToOidn ? 'The native backend denoises with OIDN, which' : 'denoise "oidn"';
-  if (preferOidn) return { denoise: 'atrous', note: `${lead} ${reason}: the GPU a-trous filter ran instead (it smooths, so it is biased; denoise "wavelet" picks the CPU filter).` };
+  const lead = isDefault ? 'denoise true uses OIDN, which' : 'denoise "oidn"';
+  if (native && !keepWavelet) return { denoise: 'atrous', note: `${lead} ${reason}: the GPU a-trous filter ran instead (it smooths, so it is biased; denoise "wavelet" picks the CPU filter).` };
   return { denoise: 'wavelet', note: `${lead} ${reason}: the wavelet filter ran instead.` };
 }
 

@@ -223,6 +223,59 @@ export function boundsCentre({ minimum, maximum }) {
   return minimum.map((value, axis) => (value + maximum[axis]) / 2);
 }
 
+// Three skew directions that no axis-aligned face or edge lies along, so a crossing count does not land on a seam.
+const ENCLOSURE_DIRECTIONS = [[0.5773, 0.5774, 0.5771], [-0.3719, 0.8412, 0.3929], [0.2437, -0.4561, 0.8571]];
+
+function crossesTriangle(positions, indices, triangle, origin, direction) {
+  const first = indices[triangle * 3] * 3;
+  const second = indices[triangle * 3 + 1] * 3;
+  const third = indices[triangle * 3 + 2] * 3;
+  const edgeOne = [positions[second] - positions[first], positions[second + 1] - positions[first + 1], positions[second + 2] - positions[first + 2]];
+  const edgeTwo = [positions[third] - positions[first], positions[third + 1] - positions[first + 1], positions[third + 2] - positions[first + 2]];
+  const pivot = [direction[1] * edgeTwo[2] - direction[2] * edgeTwo[1], direction[2] * edgeTwo[0] - direction[0] * edgeTwo[2], direction[0] * edgeTwo[1] - direction[1] * edgeTwo[0]];
+  const determinant = edgeOne[0] * pivot[0] + edgeOne[1] * pivot[1] + edgeOne[2] * pivot[2];
+  if (Math.abs(determinant) < 1e-12) return false;
+  const offset = [origin[0] - positions[first], origin[1] - positions[first + 1], origin[2] - positions[first + 2]];
+  const u = (offset[0] * pivot[0] + offset[1] * pivot[1] + offset[2] * pivot[2]) / determinant;
+  if (u < 0 || u > 1) return false;
+  const cross = [offset[1] * edgeOne[2] - offset[2] * edgeOne[1], offset[2] * edgeOne[0] - offset[0] * edgeOne[2], offset[0] * edgeOne[1] - offset[1] * edgeOne[0]];
+  const v = (direction[0] * cross[0] + direction[1] * cross[1] + direction[2] * cross[2]) / determinant;
+  if (v < 0 || u + v > 1) return false;
+  return (edgeTwo[0] * cross[0] + edgeTwo[1] * cross[1] + edgeTwo[2] * cross[2]) / determinant > 0;
+}
+
+/**
+ * Whether `point` lies inside the solid of `part`: an odd number of its triangles crossed by a ray from the point, in most of
+ * three skew directions. Winding does not matter, so a mirrored part counts the same as any other.
+ */
+export function partEnclosesPoint(part, point) {
+  const { positions, indices } = buildWorld([part]);
+  let inside = 0;
+  for (const direction of ENCLOSURE_DIRECTIONS) {
+    let crossings = 0;
+    for (let triangle = 0; triangle < indices.length / 3; triangle++) {
+      if (crossesTriangle(positions, indices, triangle, point, direction)) crossings++;
+    }
+    if (crossings % 2 === 1) inside++;
+  }
+  return inside >= 2;
+}
+
+function boundsDiagonal(part) {
+  const { minimum, maximum } = worldBounds(part);
+  return Math.hypot(maximum[0] - minimum[0], maximum[1] - minimum[1], maximum[2] - minimum[2]);
+}
+
+/**
+ * The parts a probe of `parts[probed]` can see from `position`. A part that holds the probe inside its own solid and is smaller
+ * than the probed part (a glowing bulb in the middle of a ring) would fill every direction of the map with itself, and so
+ * tint every face of the metal the same colour; it is left out. A larger part that holds the probe, such as a room, stays.
+ */
+export function partsVisibleFromProbe(parts, probed, position) {
+  const probedSize = boundsDiagonal(parts[probed]);
+  return parts.filter((part, index) => index !== probed && !(boundsDiagonal(part) < probedSize && partEnclosesPoint(part, position)));
+}
+
 /** The probe a room gets by default: the middle of the parts' bounds, reaching every corner of it. */
 export function roomCentreProbe(parts) {
   const total = { minimum: [Infinity, Infinity, Infinity], maximum: [-Infinity, -Infinity, -Infinity] };
@@ -312,11 +365,12 @@ export function traceObjectProbes(parts, lighting, options = {}) {
   const started = performance.now();
   const missRadiance = environmentMap ? environmentMissRadiance(environmentMap) : skyMissRadiance(environment);
   const skyIrradiance = environmentMap ? environmentSkyIrradiance(environmentMap) : null;
-  const traced = wanted.map(index => {
-    const others = parts.filter((part, other) => other !== index);
+  const traced = wanted.flatMap(index => {
     const position = boundsCentre(worldBounds(parts[index]));
+    const others = partsVisibleFromProbe(parts, index, position);
+    if (others.length === 0) return [];
     const [map] = traceProbeMaps(others, lighting, [position], { width, samples, bounces, rotation, missRadiance, skyIrradiance, maxSeconds });
-    return { position, radius: null, part: index, ...map };
+    return [{ position, radius: null, part: index, ...map }];
   });
   return { traced, automatic: true, requested: reflective.length, skipped: null, seconds: (performance.now() - started) / 1000 };
 }

@@ -40,7 +40,17 @@ export const TEMPORAL_DEFAULTS = Object.freeze({
   // 6 degrees apart) the pixel starts again: a cut to another view of the same room would otherwise carry the old view's
   // reflections and highlights along.
   viewAgreement: 0.995,
+  // History that the depth test rejects on a depth step (the blurred edge of a leaf against the room behind it) is taken back
+  // when its distance lies inside the range of the 3x3 hits around the pixel, but clamped to the colour range of that
+  // neighbourhood (mean plus or minus this many standard deviations, in YCoCg), so light of the other surface cannot ghost in.
+  // Zero keeps every depth rejection, as before issue 1214.
+  edgeClampDeviations: 0.5,
+  // A pixel that took history back this way never counts more than this many frames, so a wrong guess fades quickly.
+  edgeHistoryFrames: 8,
 });
+
+// Options that are not shares between 0 and 1. The value says whether zero is allowed (the clamp: zero switches the rescue off).
+const NON_SHARE_OPTIONS = Object.freeze({ edgeClampDeviations: true, edgeHistoryFrames: false });
 
 function requirePlane(plane, name, floatsPerPixel, pixelCount) {
   if (!(plane instanceof Float32Array) || plane.length !== pixelCount * floatsPerPixel) {
@@ -115,6 +125,93 @@ export function onlyCameraDiffers(firstParams, secondParams) {
   return true;
 }
 
+function toLuma(red, green, blue) {
+  return 0.25 * red + 0.5 * green + 0.25 * blue;
+}
+
+function toChromaOrange(red, blue) {
+  return 0.5 * red - 0.5 * blue;
+}
+
+function toChromaGreen(red, green, blue) {
+  return -0.25 * red + 0.5 * green - 0.25 * blue;
+}
+
+/**
+ * For every pixel the mean and standard deviation of the 3x3 colours around it in YCoCg (6 floats), and the nearest and
+ * farthest first hit in the same window (2 floats; both 0 when the window holds no hit).
+ */
+export function measureNeighbourhoods({ color, depth, width, height }) {
+  const colorStatistics = new Float32Array(width * height * 6);
+  const depthRange = new Float32Array(width * height * 2);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const sums = [0, 0, 0, 0, 0, 0];
+      let nearest = Infinity;
+      let farthest = 0;
+      let samples = 0;
+      for (let rowOffset = -1; rowOffset <= 1; rowOffset++) {
+        for (let columnOffset = -1; columnOffset <= 1; columnOffset++) {
+          const neighbour = Math.min(height - 1, Math.max(0, y + rowOffset)) * width + Math.min(width - 1, Math.max(0, x + columnOffset));
+          const red = color[neighbour * 3];
+          const green = color[neighbour * 3 + 1];
+          const blue = color[neighbour * 3 + 2];
+          const luma = toLuma(red, green, blue);
+          const orange = toChromaOrange(red, blue);
+          const chromaGreen = toChromaGreen(red, green, blue);
+          sums[0] += luma;
+          sums[1] += orange;
+          sums[2] += chromaGreen;
+          sums[3] += luma * luma;
+          sums[4] += orange * orange;
+          sums[5] += chromaGreen * chromaGreen;
+          samples += 1;
+          if (depth[neighbour] > 0) {
+            nearest = Math.min(nearest, depth[neighbour]);
+            farthest = Math.max(farthest, depth[neighbour]);
+          }
+        }
+      }
+      const pixel = y * width + x;
+      for (let channel = 0; channel < 3; channel++) {
+        const mean = sums[channel] / samples;
+        colorStatistics[pixel * 6 + channel] = mean;
+        colorStatistics[pixel * 6 + 3 + channel] = Math.sqrt(Math.max(0, sums[3 + channel] / samples - mean * mean));
+      }
+      depthRange[pixel * 2] = farthest > 0 ? nearest : 0;
+      depthRange[pixel * 2 + 1] = farthest;
+    }
+  }
+  return { colorStatistics, depthRange };
+}
+
+/** Pulls an RGB colour into mean plus or minus `deviations` standard deviations of the neighbourhood, in YCoCg. Returns [red, green, blue]. */
+export function clampToNeighbourhood(red, green, blue, colorStatistics, pixel, deviations) {
+  const base = pixel * 6;
+  const luma = clampChannel(toLuma(red, green, blue), colorStatistics[base], colorStatistics[base + 3], deviations);
+  const orange = clampChannel(toChromaOrange(red, blue), colorStatistics[base + 1], colorStatistics[base + 4], deviations);
+  const chromaGreen = clampChannel(toChromaGreen(red, green, blue), colorStatistics[base + 2], colorStatistics[base + 5], deviations);
+  return [luma + orange - chromaGreen, luma + chromaGreen, luma - orange - chromaGreen];
+}
+
+function clampChannel(value, mean, deviation, deviations) {
+  const spread = deviation * deviations;
+  return Math.min(mean + spread, Math.max(mean - spread, value));
+}
+
+function insideDepthRange(pastDistance, depthRange, pixel, tolerance) {
+  const nearest = depthRange[pixel * 2];
+  const farthest = depthRange[pixel * 2 + 1];
+  return farthest > 0 && pastDistance >= nearest * (1 - tolerance) && pastDistance <= farthest * (1 + tolerance);
+}
+
+function validateNonShare(value, name, zeroAllowed) {
+  const lowest = zeroAllowed ? 0 : 1;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < lowest) {
+    throw new RangeError(`createTemporalAccumulator: \`${name}\` must be a number of at least ${lowest}${zeroAllowed ? ' (0 switches it off)' : ''}, got ${JSON.stringify(value)}.`);
+  }
+}
+
 function validateShare(value, name) {
   if (typeof value !== 'number' || !(value > 0 && value <= 1)) {
     throw new RangeError(`createTemporalAccumulator: \`${name}\` must be a number above 0 and at most 1, got ${JSON.stringify(value)}.`);
@@ -124,7 +221,7 @@ function validateShare(value, name) {
 /**
  * Holds the history of one job. `accumulate` takes the planes of a frame and returns the colour to show.
  *
- * @param {{ width: number, height: number, minimumWeight?: number, depthTolerance?: number, normalAgreement?: number, minimumFetchWeight?: number, viewAgreement?: number }} options
+ * @param {{ width: number, height: number, minimumWeight?: number, depthTolerance?: number, normalAgreement?: number, minimumFetchWeight?: number, viewAgreement?: number, edgeClampDeviations?: number, edgeHistoryFrames?: number }} options
  */
 export function createTemporalAccumulator(options = {}) {
   const { width, height } = options;
@@ -134,7 +231,11 @@ export function createTemporalAccumulator(options = {}) {
   const settings = { ...TEMPORAL_DEFAULTS };
   for (const name of Object.keys(TEMPORAL_DEFAULTS)) {
     if (options[name] !== undefined) {
-      validateShare(options[name], name);
+      if (name in NON_SHARE_OPTIONS) {
+        validateNonShare(options[name], name, NON_SHARE_OPTIONS[name]);
+      } else {
+        validateShare(options[name], name);
+      }
       settings[name] = options[name];
     }
   }
@@ -200,6 +301,7 @@ export function createTemporalAccumulator(options = {}) {
     const pastCamera = past.camera;
     const { position, forward, right, up, lensShift } = camera;
     let pixelsWithHistory = 0;
+    const { colorStatistics, depthRange } = measureNeighbourhoods({ color, depth, width, height });
     for (let y = 0; y < height; y++) {
       const sensorY = 1 - ((y + 0.5) / height) * 2 + 2 * lensShift[1];
       for (let x = 0; x < width; x++) {
@@ -211,6 +313,7 @@ export function createTemporalAccumulator(options = {}) {
         let pastBlue = 0;
         let pastCount = 0;
         let fetchWeight = 0;
+        let rescuedWeight = 0;
         if (distance > 0) {
           const sensorX = ((x + 0.5) / width) * 2 - 1 + 2 * lensShift[0];
           let directionX = forward[0] + right[0] * sensorX + up[0] * sensorY;
@@ -250,13 +353,18 @@ export function createTemporalAccumulator(options = {}) {
                 const sourceColumn = Math.min(width - 1, Math.max(0, left + cornerX));
                 const sourceRow = Math.min(height - 1, Math.max(0, top + cornerY));
                 const source = sourceRow * width + sourceColumn;
-                if (Math.abs(past.depth[source] - expectedDistance) > allowedDifference) {
-                  continue;
-                }
                 const sourceIndex = source * 3;
-                const agreement = normalX * past.normal[sourceIndex] + normalY * past.normal[sourceIndex + 1] + normalZ * past.normal[sourceIndex + 2];
-                if (agreement < settings.normalAgreement) {
-                  continue;
+                const sameSurface = Math.abs(past.depth[source] - expectedDistance) <= allowedDifference;
+                if (!sameSurface) {
+                  if (!(settings.edgeClampDeviations > 0) || !insideDepthRange(past.depth[source], depthRange, pixel, settings.depthTolerance)) {
+                    continue;
+                  }
+                  rescuedWeight += weight;
+                } else {
+                  const agreement = normalX * past.normal[sourceIndex] + normalY * past.normal[sourceIndex + 1] + normalZ * past.normal[sourceIndex + 2];
+                  if (agreement < settings.normalAgreement) {
+                    continue;
+                  }
                 }
                 pastRed += past.color[sourceIndex] * weight;
                 pastGreen += past.color[sourceIndex + 1] * weight;
@@ -268,6 +376,11 @@ export function createTemporalAccumulator(options = {}) {
           }
         }
         if (fetchWeight > settings.minimumFetchWeight) {
+          if (rescuedWeight > 0) {
+            [pastRed, pastGreen, pastBlue] = clampToNeighbourhood(pastRed / fetchWeight, pastGreen / fetchWeight, pastBlue / fetchWeight, colorStatistics, pixel, settings.edgeClampDeviations)
+              .map(channel => channel * fetchWeight);
+            pastCount = Math.min(pastCount / fetchWeight, settings.edgeHistoryFrames) * fetchWeight;
+          }
           const count = pastCount / fetchWeight + 1;
           const share = Math.max(1 / count, minimumShare);
           const kept = (1 - share) / fetchWeight;

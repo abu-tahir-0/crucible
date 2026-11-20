@@ -13,7 +13,7 @@ try {
   await page.route('**/morph-smoke.html', route => route.fulfill({ contentType: 'text/html', body: '<canvas style="width:640px;height:480px;display:block"></canvas>' }));
   await page.goto('http://127.0.0.1:5173/morph-smoke.html');
   const report = await page.evaluate(async () => {
-    const { CrucibleRenderer, box, createMorphPose } = await import('/build/67.module.js');
+    const { CrucibleRenderer, box, createMorphPose } = await import('/build/crucible.module.js');
     const { mat4 } = await import('/node_modules/gl-matrix/esm/index.js');
     const geometry = box();
     const deltas = new Float32Array(geometry.positions.length);

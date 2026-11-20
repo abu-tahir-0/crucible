@@ -1,6 +1,7 @@
 import { registerShaderFeatureCode } from './shader-registry.js';
 import { ALL_LIGHTS_MASK } from './material-layers.js';
 import { SUN_BIT, POINT_FIRST_BIT, SPOT_FIRST_BIT, AREA_FIRST_BIT } from './light-link-bits.js';
+import { invalidField } from './field-error.js';
 
 // Light linking: a light can be limited to the parts it lights, as Blender's receiver collection does. A part carries
 // a bit mask in `material.lightMask`; the shader skips a light whose bit is clear. The code lives here, not in the
@@ -73,15 +74,28 @@ export function applyLightLinks(parts, environment) {
 }
 
 /**
- * Names in a light's `affects` list that are not nodes of the recipe, as "where: name" strings. A linked light lights
- * only those nodes, so a misspelled name would silently darken a part; the caller fails with the next action instead.
+ * Every `affects` list that names something other than a node with a geometry, as { path, names }: path is the
+ * recipe path of the list (what an agent set) and names the unknown entries. A linked light lights only the named nodes, so a misspelled name would silently darken a part; the caller fails
+ * with the next action instead. Only a node with a geometry draws a part under its own name: a group has none.
  */
-export function unknownLightLinkNames(environment, nodes) {
-  // Only a node with a geometry draws a part under its own name: a group has none, so a light linked to it would light nothing.
+export function unknownLightLinkLists(environment, nodes) {
   const known = new Set(nodes.filter(node => node.geometry !== undefined).map(node => node.id));
   const lists = [['environment.keyAffects', environment.keyAffects]];
   for (const field of ['pointLights', 'spotLights', 'areaLights']) {
-    (environment[field] ?? []).forEach((light, index) => lists.push([`${field}[${index}].affects`, light.affects]));
+    (environment[field] ?? []).forEach((light, index) => lists.push([`environment.${field}[${index}].affects`, light.affects]));
   }
-  return lists.flatMap(([where, names]) => (names ?? []).filter(name => !known.has(name)).map(name => `${where}: ${name}`));
+  return lists
+    .map(([path, names]) => {
+      const unknownNames = (names ?? []).filter(name => !known.has(name));
+      return { path, names: unknownNames };
+    })
+    .filter(list => list.names.length > 0);
+}
+
+/** Throws a field error for the first `affects` list that names a node without a geometry; the path is the list the agent set. */
+export function requireKnownLightLinkNames(environment, nodes) {
+  const [first] = unknownLightLinkLists(environment, nodes);
+  if (first !== undefined) {
+    throw invalidField(first.path, first.names.slice(0, 4), 'geometry node IDs, not groups or assets; scene_inspect lists them');
+  }
 }

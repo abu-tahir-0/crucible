@@ -38,10 +38,10 @@ function unlinkedScene(extraMaterial = {}) {
 
 const SMALL = { width: 32, height: 24, samples: 4, bounces: 3, threads: 1 };
 
-// The hash moved once, with the denoiser's luminance guide (#1335); it pins that linking itself changes no pixel.
+// The hash moved twice, with the denoiser's luminance guide (#1335) and with the shared albedo definition (#1941, the wavelet filter reads the albedo); it pins that linking itself changes no pixel.
 test('a scene without links keeps the pixels it had before linking was traced', async () => {
   const image = await renderPathTracedImage(unlinkedScene(), SMALL);
-  assert.equal(createHash('sha256').update(image.rgba).digest('hex'), '87c0951fbd398f8eb1140b5825d7127a6004e85a45ab11305f9fb1cb3a23dfc3');
+  assert.equal(createHash('sha256').update(image.rgba).digest('hex'), 'eae33e19bb9651c867c58d3b7d709c22b696ce7f047a0f431804289b24c0d011');
 });
 
 test('a mask that lets every light through gives the pixels of no mask', async () => {

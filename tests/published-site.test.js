@@ -86,8 +86,8 @@ test('a link to a host that only starts with the site address leaves the site', 
 test('the release link check fails on a /releases/<x.y.z>/ link that public/releases lacks', () => {
   withFixture({
     'public/release.json': '{}',
-    'public/releases/0.20.0/67.module.js': '',
-    'public/llms.txt': 'Import /releases/0.20.0/67.module.js or /releases/0.15.0/67.module.js.',
+    'public/releases/0.20.0/crucible.module.js': '',
+    'public/llms.txt': 'Import /releases/0.20.0/crucible.module.js or /releases/0.15.0/crucible.module.js.',
   }, folder => {
     const problems = findMissingReleaseLinks(folder);
     assert.equal(problems.length, 1, problems.join('\n'));
@@ -99,7 +99,7 @@ test('the learn pages carry no release URL that the site stops serving', () => {
   for (const page of ['install.md', 'connect-mcp.md', 'agent-workflows.md']) {
     assert.doesNotMatch(readText(`docs/learn/${page}`), /\/releases\/\d+\.\d+\.\d+\//, page);
   }
-  assert.match(readText('docs/learn/install.md'), /releases\/<version>\/67\.module\.js/);
+  assert.match(readText('docs/learn/install.md'), /releases\/<version>\/crucible\.module\.js/);
 });
 
 test('the docs say three-compat is not on npm, three-bridge installs from npm, and each package names its repository folder', () => {

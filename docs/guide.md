@@ -17,7 +17,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
 
 const page = `<!doctype html>
-<script type="importmap">{ "imports": { "crucible": "/node_modules/crucible/build/67.module.js" } }</script>
+<script type="importmap">{ "imports": { "crucible": "/node_modules/crucible/build/crucible.module.js" } }</script>
 <canvas width="512" height="512"></canvas>
 <script type="module">
   import { CrucibleRenderer, box } from 'crucible';

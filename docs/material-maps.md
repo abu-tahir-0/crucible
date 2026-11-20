@@ -57,7 +57,7 @@ Different descriptors allocate separately even when they reference the same deco
 Every channel and its mipmaps contributes to `textureBytes` and the render memory plan.
 
 A batch groups geometry identity, all five map identities, `normalScale` values, `occlusionStrength`, `moss` and `mossColor`.
-The renderer uses batch uniforms for scale and strength because its instance attributes already occupy 16 vertex locations.
+The renderer uses batch uniforms for scale and strength because its instance attributes fill the 16 vertex attribute slots Safari allows (it counts `gl_InstanceID` as one; `tests/shader-attribute-budget.test.js` fails when a variant goes over).
 Changing any of these batch fields requires a new renderer. `updateParts()` rejects changes before uploading instance data.
 Color, metallic, roughness, emission, emissive color, and transforms retain their existing update behavior.
 Descriptors must remain unchanged while a renderer uses them. Image pixels change only through `updateTexture`.

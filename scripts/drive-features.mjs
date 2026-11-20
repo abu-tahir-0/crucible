@@ -64,18 +64,24 @@ export function formatFeatureList(features, surface = null) {
 }
 
 const VALUE_FLAGS = new Set(['out', 'origin', 'width', 'height', 'surface', 'settle']);
+const POSITIVE_NUMBER_FLAGS = new Set(['width', 'height']);
 const BOOLEAN_FLAGS = new Set(['no-gpu-lock', 'full-page']);
-const NUMBER_FLAGS = new Set(['width', 'height', 'settle']);
 
-function valueFor(name, value) {
-  if (value.startsWith('--')) throw new Error(`--${name} needs a value before the next flag.`);
-  if (NUMBER_FLAGS.has(name)) {
-    const number = Number(value);
-    if (value.trim() === '' || !Number.isFinite(number) || (name === 'settle' ? number < 0 : number <= 0)) {
-      throw new Error(`--${name} needs ${name === 'settle' ? 'a number of milliseconds that is 0 or more' : 'a number greater than 0'}, got "${value}".`);
-    }
+function readFlagValue(name, value) {
+  if (value === undefined) throw new Error(`--${name} needs a value.`);
+  if (value.startsWith('--')) {
+    throw new Error(`--${name} got ${JSON.stringify(value)}, which looks like another flag. Pass a value after --${name}, for example --${name} <value>.`);
   }
+  if (POSITIVE_NUMBER_FLAGS.has(name) || name === 'settle') requireNumber(name, value, POSITIVE_NUMBER_FLAGS.has(name));
   return value;
+}
+
+function requireNumber(name, value, mustBePositive) {
+  const number = value.trim() === '' ? Number.NaN : Number(value);
+  const valid = Number.isFinite(number) && (mustBePositive ? number > 0 : number >= 0);
+  if (valid) return;
+  const expectation = mustBePositive ? 'a finite number above 0' : 'a finite number of milliseconds, 0 or above';
+  throw new Error(`--${name} got ${JSON.stringify(value)}. Pass ${expectation}.`);
 }
 
 export function parseCommandLine(argv) {
@@ -93,8 +99,7 @@ export function parseCommandLine(argv) {
       flags[name] = true;
     } else if (VALUE_FLAGS.has(name)) {
       const value = rest[++index];
-      if (value === undefined) throw new Error(`--${name} needs a value.`);
-      flags[name] = valueFor(name, value);
+      flags[name] = readFlagValue(name, value);
     } else {
       throw new Error(`Unknown flag --${name}.`);
     }

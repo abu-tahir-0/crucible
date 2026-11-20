@@ -187,13 +187,24 @@ test('set-cloth edits the section, null clears it and the recipe round trips', (
   assert.equal(scene.parts[0].geometry.positions.length, createAgentScene(flagRecipe(null)).parts[0].geometry.positions.length);
 });
 
-test('editing a scene while the cloth is posed returns the rest sheet and tells renderers', () => {
+// #2730: an edit keeps the pose on screen, so Studio does not jump back to the rest sheet or rebuild the scene.
+test('an edit while the cloth is posed keeps the posed sheet, and an edit to the cloth poses it again', () => {
   const scene = createAgentScene(flagRecipe(hangingFlag));
+  const authored = scene.exportRecipe();
   scene.sampleMotion(1);
-  const topology = scene.topologyRevision;
+  const posed = Array.from(scene.parts[0].geometry.positions);
+  let topology = scene.topologyRevision;
   scene.apply([{ type: 'set-material', id: 'fabric', roughness: 0.4 }], { expectedRevision: scene.revision });
-  assert.ok(scene.topologyRevision > topology);
-  assert.equal(scene.parts[0].geometry.positions.length, 13 * 13 * 3);
+  assert.deepEqual(Array.from(scene.parts[0].geometry.positions), posed, 'the sheet stays as it was at 1 s');
+  assert.equal(scene.topologyRevision, topology, 'a material edit is not a topology change');
+  assert.deepEqual(scene.exportRecipe(), { ...authored, materials: authored.materials.map(material => (material.id === 'fabric' ? { ...material, roughness: 0.4 } : material)) }, 'the recipe holds the authored sheet, not the pose');
+  topology = scene.topologyRevision;
+  scene.apply([{ type: 'set-cloth', cloth: { ...hangingFlag, wind: [0, 0, 6] } }], { expectedRevision: scene.revision });
+  assert.ok(scene.topologyRevision > topology, 'renderers hear about the new sheet');
+  assert.notDeepEqual(Array.from(scene.parts[0].geometry.positions), posed, 'the windy sheet is posed again');
+  const fresh = createAgentScene(flagRecipe({ ...hangingFlag, wind: [0, 0, 6] }));
+  fresh.sampleMotion(1);
+  assert.deepEqual(Array.from(scene.parts[0].geometry.positions), Array.from(fresh.parts[0].geometry.positions), 'as a fresh scene sampled at the playhead');
 });
 
 test('hostile cloth sections are rejected before any solver runs', () => {

@@ -391,7 +391,7 @@ async function renderBothBackends({ volumes, width, height, samples }) {
   const result = {};
   for (const backend of ['cpu', 'webgpu']) {
     const started = performance.now();
-    const image = await renderPathTracedImage({ parts, environment, camera }, { width, height, samples, bounces: 3, seed: 7, backend, denoiser: 'none', threads: 1 });
+    const image = await renderPathTracedImage({ parts, environment, camera }, { width, height, samples, bounces: 3, seed: 7, backend, denoise: false, threads: 1 });
     result[backend] = { linear: Array.from(image.linear), seconds: (performance.now() - started) / 1000 };
   }
   return result;

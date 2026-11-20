@@ -62,7 +62,7 @@ A plain HTML page can import Crucible from this site. Take the `module` path fro
 
 ```html
 <script type="importmap">
-  { "imports": { "crucible": "https://crucible.codepawl.com/releases/<version>/67.module.js" } }
+  { "imports": { "crucible": "https://crucible.codepawl.com/releases/<version>/crucible.module.js" } }
 </script>
 <script type="module">
   import { CrucibleRenderer, box } from 'crucible';
@@ -73,12 +73,12 @@ Serve the page over HTTP, for example with `npx serve`. A page opened from a `fi
 
 ## Use Crucible from jsdelivr
 
-From version 0.20.0 the npm package holds one self-contained module, `build/67.standalone.js`. It has no relative imports, so jsdelivr (and unpkg) serve it from one URL. Pin the version in the URL. This works in a plain HTML file and in a claude.ai artifact, which loads scripts only from cdnjs, jsdelivr and unpkg.
+From version 0.20.0 the npm package holds one self-contained module, `build/crucible.standalone.js` (named `build/67.standalone.js` in 0.20.0 and 0.21.0). From 0.22.0 it has no relative imports, so jsdelivr (and unpkg) serve it from one URL; in 0.20.0 and 0.21.0 it imports one renderer chunk, which the CDN also serves, so the page makes two requests. Pin the version in the URL. This works in a plain HTML file and in a claude.ai artifact, which loads scripts only from cdnjs, jsdelivr and unpkg.
 
 ```html
 <canvas id="view" width="640" height="400"></canvas>
 <script type="module">
-  import { CrucibleRenderer, box } from 'https://cdn.jsdelivr.net/npm/@codepawlhq/crucible@0.20.0/build/67.standalone.js';
+  import { CrucibleRenderer, box } from 'https://cdn.jsdelivr.net/npm/@codepawlhq/crucible@0.22.0/build/crucible.standalone.js';
 
   const parts = [{
     name: 'Cube',

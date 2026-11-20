@@ -1,0 +1,1 @@
+- entry:crucible-scene: +119 B gzip to decode RGBE reflection probes, which cut the gzip data of a scene with metal parts by 55 percent.

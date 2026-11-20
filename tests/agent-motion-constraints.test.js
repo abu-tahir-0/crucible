@@ -206,3 +206,14 @@ test('the capabilities list every constraint type', () => {
   assert.deepEqual([...AGENT_SCENE_CAPABILITIES.motionConstraints], [...CONSTRAINT_TYPES]);
   assert.ok(quat.length(rotationOf(1, 2, 3)) > 0);
 });
+
+test('an influence expression that gives NaN names the constraint and the node it moves (#2377)', () => {
+  const recipe = nodeRecipe([{ id: 'lead', translation: [1, 0, 0] }, { id: 'follower', translation: [0, 0, 0] }], {
+    duration: 2,
+    constraints: [{ type: 'copy_location', node: 'follower', target: 'lead', influence: { div: [{ sub: ['time', 1] }, { sub: ['time', 1] }] } }],
+  });
+  const scene = createAgentScene(recipe);
+  scene.sampleMotion(0.5);
+  assertClose(worldPosition(scene, 'follower'), [1, 0, 0]);
+  assert.throws(() => scene.sampleMotion(1), /The influence of the copy_location constraint on node follower produced NaN at time 1/);
+});

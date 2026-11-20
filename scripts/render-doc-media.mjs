@@ -11,6 +11,7 @@ import { spawnSync } from 'node:child_process';
 import { createServer } from 'vite';
 import { chromium } from 'playwright-core';
 import sharp from 'sharp';
+import { selectPages, parseExamples } from './doc-media-examples.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const outputFolder = join(root, 'public', 'docs-media');
@@ -22,22 +23,14 @@ function ffmpegPath() {
 }
 
 async function pagesToRender() {
-  const requested = process.argv.slice(2);
   const files = await readdir(join(root, 'docs', 'learn'));
   const pages = files.filter(file => file.endsWith('.md')).map(file => file.slice(0, -3));
-  return requested.length ? pages.filter(page => requested.includes(page)) : pages;
+  return selectPages(pages, process.argv.slice(2));
 }
 
 async function examplesOf(page) {
   const text = await readFile(join(root, 'docs', 'learn', `${page}.md`), 'utf8');
-  const examples = [];
-  for (const match of text.matchAll(/^```js live([^\n]*)$/gm)) {
-    const options = Object.fromEntries(match[1].trim().split(/\s+/).filter(Boolean).map(flag => flag.split('=')));
-    if (!options.poster) continue;
-    const wantsLoop = text.includes(`/docs-media/${options.poster}.webm`);
-    examples.push({ poster: options.poster, loopSeconds: wantsLoop ? Number(options.loop) : 0 });
-  }
-  return examples;
+  return parseExamples(page, text, outputFolder);
 }
 
 async function stagePicture(stage) {

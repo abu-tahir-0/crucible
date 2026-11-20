@@ -7,14 +7,12 @@ test('the CRUCIBLE_ name is read', () => {
   assert.equal(readEnvironmentVariable('MCP_LOG', { CRUCIBLE_MCP_LOG: 'new.jsonl' }), 'new.jsonl');
 });
 
-test('the SIXTYSEVENJS_ name still works as an alias', () => {
-  assert.equal(readEnvironmentVariable('MCP_LOG', { SIXTYSEVENJS_MCP_LOG: 'old.jsonl' }), 'old.jsonl');
+test('the SIXTYSEVENJS_ name from before the rename is no longer read', () => {
+  assert.equal(readEnvironmentVariable('MCP_LOG', { SIXTYSEVENJS_MCP_LOG: 'old.jsonl' }), undefined);
 });
 
-test('the CRUCIBLE_ name wins when both are set, and an empty one falls back to the alias', () => {
-  const both = { CRUCIBLE_MCP_LOG: 'new.jsonl', SIXTYSEVENJS_MCP_LOG: 'old.jsonl' };
-  assert.equal(readEnvironmentVariable('MCP_LOG', both), 'new.jsonl');
-  assert.equal(readEnvironmentVariable('MCP_LOG', { ...both, CRUCIBLE_MCP_LOG: '' }), 'old.jsonl');
+test('an empty or missing CRUCIBLE_ name counts as not set', () => {
+  assert.equal(readEnvironmentVariable('MCP_LOG', { CRUCIBLE_MCP_LOG: '' }), undefined);
   assert.equal(readEnvironmentVariable('MCP_LOG', {}), undefined);
 });
 
