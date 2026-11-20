@@ -135,6 +135,20 @@ export function cascadeSplitDistances(count, near, far, lambda = DEFAULT_SPLIT_L
   return distances;
 }
 
+/**
+ * The view depth where each shadow slice ends. The near slices split the range up to `maximumDistance`, where the texels are
+ * small enough to matter. When the receivers reach further (`receiverReach`, the far end of what the camera sees inside the
+ * scene bounds), one more slice covers everything from there to that reach, so a far slope still gets the shadow of a peak
+ * instead of reading as lit. It takes one layer of the 4 the shader holds, so a request for 4 slices keeps 3 near ones.
+ */
+export function planCascadeSplits(count, near, receiverReach, maximumDistance, lambda = DEFAULT_SPLIT_LAMBDA) {
+  // A maximum distance nearer than the camera near plane would put the splits in front of the camera and out of order.
+  const nearReach = Math.max(Math.min(receiverReach, maximumDistance), near);
+  if (receiverReach <= nearReach) return { splits: cascadeSplitDistances(count, near, nearReach, lambda), farLayer: false };
+  const nearCount = Math.min(count, MAXIMUM_CASCADES - 1);
+  return { splits: [...cascadeSplitDistances(nearCount, near, nearReach, lambda), receiverReach], farLayer: true };
+}
+
 // The eight corners of the camera frustum, near plane first, from the inverse view-projection matrix.
 function frustumCorners(inverseViewProjection) {
   const corners = [];
@@ -214,6 +228,8 @@ export class CascadedShadows {
     this.matrices = new Float32Array(MAXIMUM_CASCADES * 16);
     this.drawnMatrices = new Float32Array(MAXIMUM_CASCADES * 16);
     this.holds = [];
+    this.layerCount = this.count;
+    this.allocatedLayers = 0;
     this.holdMargin = HOLD_MARGIN;
     this.splits = new Float32Array(MAXIMUM_CASCADES).fill(1e9);
     this.texels = new Float32Array(MAXIMUM_CASCADES).fill(1);
@@ -227,10 +243,13 @@ export class CascadedShadows {
   }
 
   allocate(context) {
+    if (this.texture) context.deleteTexture(this.texture);
+    if (this.framebuffer) context.deleteFramebuffer(this.framebuffer);
+    this.allocatedLayers = this.layerCount;
     this.texture = context.createTexture();
     context.activeTexture(context.TEXTURE0);
     context.bindTexture(context.TEXTURE_2D_ARRAY, this.texture);
-    context.texImage3D(context.TEXTURE_2D_ARRAY, 0, context.DEPTH_COMPONENT24, this.resolution, this.resolution, this.count, 0, context.DEPTH_COMPONENT, context.UNSIGNED_INT, null);
+    context.texImage3D(context.TEXTURE_2D_ARRAY, 0, context.DEPTH_COMPONENT24, this.resolution, this.resolution, this.layerCount, 0, context.DEPTH_COMPONENT, context.UNSIGNED_INT, null);
     context.texParameteri(context.TEXTURE_2D_ARRAY, context.TEXTURE_MIN_FILTER, context.NEAREST);
     context.texParameteri(context.TEXTURE_2D_ARRAY, context.TEXTURE_MAG_FILTER, context.NEAREST);
     context.texParameteri(context.TEXTURE_2D_ARRAY, context.TEXTURE_WRAP_S, context.CLAMP_TO_EDGE);
@@ -249,39 +268,44 @@ export class CascadedShadows {
     const nearDistance = viewDepthOf(corners[0], renderer.view);
     const planeFarDistance = viewDepthOf(corners[4], renderer.view);
     // A maximum distance nearer than the camera near plane would put the splits in front of the camera and out of order.
-    const farDistance = Math.max(Math.min(planeFarDistance, this.maximumDistance), nearDistance);
-    const splits = cascadeSplitDistances(this.count, nearDistance, farDistance, this.splitLambda);
+    // Receivers past the scene bounds get no shadow from the single map either, so the far slice stops at the bounds.
+    const boundsFarDistance = viewDepthOf(light.target, renderer.view) + light.extent;
+    const receiverReach = Math.max(Math.min(planeFarDistance, boundsFarDistance), nearDistance);
+    const { splits, farLayer } = planCascadeSplits(this.count, nearDistance, receiverReach, this.maximumDistance, this.splitLambda);
+    this.layerCount = splits.length;
     const planeSpan = planeFarDistance - nearDistance;
     let previousFraction = 0;
     splits.forEach((split, layer) => {
       const endFraction = Math.min((split - nearDistance) / planeSpan, 1);
       const sphere = boundingSphere(frustumSlice(corners, previousFraction, endFraction));
-      const fitted = this.chooseFit(layer, sphere, towardLight);
+      // Any caster inside the scene bounds may shadow the far slice, a peak kilometres toward the sun included.
+      const reach = farLayer && layer === splits.length - 1 ? Math.max(this.casterReach, light.extent) : this.casterReach;
+      const fitted = this.chooseFit(layer, sphere, towardLight, reach);
       this.matrices.set(fitted.matrix, layer * 16);
       this.splits[layer] = split;
       this.texels[layer] = fitted.texel;
       this.ranges[layer] = fitted.range;
       previousFraction = endFraction;
     });
-    this.forward.set([...renderer.viewForward, this.count]);
+    this.forward.set([...renderer.viewForward, this.layerCount]);
     return this.matrices.some((value, index) => value !== this.drawnMatrices[index]);
   }
 
   // The nearest slice always fits exactly. A farther slice that moved keeps its last map while the new slice still sits inside
   // it, and is redrawn wider than needed when it does not; a camera that stops settles back on the exact fit.
-  chooseFit(layer, sphere, towardLight) {
+  chooseFit(layer, sphere, towardLight, casterReach = this.casterReach) {
     const hold = this.holds[layer] ??= { fit: null, tight: null };
     const tight = { matrix: new Float32Array(16), towardLight: vec3.clone(towardLight) };
-    Object.assign(tight, writeCascadeMatrix(tight.matrix, sphere, towardLight, this.resolution, this.casterReach));
+    Object.assign(tight, writeCascadeMatrix(tight.matrix, sphere, towardLight, this.resolution, casterReach));
     const moved = hold.tight && tight.matrix.some((value, index) => value !== hold.tight.matrix[index]);
     hold.tight = tight;
     if (layer === 0 || !hold.fit || !moved) {
       hold.fit = tight;
-    } else if (!fitCovers(hold.fit, sphere, towardLight, this.casterReach)) {
+    } else if (!fitCovers(hold.fit, sphere, towardLight, casterReach)) {
       const wide = { matrix: new Float32Array(16), towardLight: vec3.clone(towardLight) };
       // The depth range gets the same margin on the light side, so a slice that drifts toward the light stays covered too.
       const margin = sphere.radius * this.holdMargin;
-      Object.assign(wide, writeCascadeMatrix(wide.matrix, { center: sphere.center, radius: sphere.radius + margin }, towardLight, this.resolution, this.casterReach, margin));
+      Object.assign(wide, writeCascadeMatrix(wide.matrix, { center: sphere.center, radius: sphere.radius + margin }, towardLight, this.resolution, casterReach, margin));
       hold.fit = wide;
     }
     return hold.fit;
@@ -295,11 +319,13 @@ export class CascadedShadows {
   /** Redraws the slice maps when the camera, the light or a caster moved. Call once a frame after the camera is set. */
   update(renderer, casterChanged) {
     const context = renderer.context;
-    if (!this.texture) {
+    let moved = this.fitToCamera(renderer);
+    // The far slice appears once the camera sees past maximumDistance, and then the array is one layer taller.
+    if (!this.texture || this.allocatedLayers !== this.layerCount) {
       this.allocate(context);
-      renderer.renderTargets.record('cascadedShadowMaps', { width: this.resolution, height: this.resolution, layers: this.count, format: 'DEPTH_COMPONENT24' });
+      renderer.renderTargets.record('cascadedShadowMaps', { width: this.resolution, height: this.resolution, layers: this.layerCount, format: 'DEPTH_COMPONENT24' });
+      moved = true;
     }
-    const moved = this.fitToCamera(renderer);
     if (!moved && !casterChanged && this.drawCount > 0) return;
     this.drawCount++;
     context.bindFramebuffer(context.FRAMEBUFFER, this.framebuffer);
@@ -308,7 +334,7 @@ export class CascadedShadows {
     context.viewport(0, 0, this.resolution, this.resolution);
     context.enable(context.DEPTH_TEST);
     context.enable(context.CULL_FACE);
-    for (let layer = 0; layer < this.count; layer++) {
+    for (let layer = 0; layer < this.layerCount; layer++) {
       const layerMatrix = this.matrices.subarray(layer * 16, layer * 16 + 16);
       const drawnMatrix = this.drawnMatrices.subarray(layer * 16, layer * 16 + 16);
       // A slice whose matrix did not change keeps the depth it holds, because the casters it draws depend on that matrix alone.

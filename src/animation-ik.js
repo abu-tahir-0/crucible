@@ -109,6 +109,9 @@ export function createLookAt(options = {}) {
     const returned = isPoint ? options.target : options.target(time, current);
     const goal = lastGoal(returned, Array.isArray(returned) && returned.length === 3 && returned.every(Number.isFinite)) ?? current;
     const amount = smoothingAmount(time);
+    // With no good target yet the goal is the current aim, which can itself be NaN; easing toward it would poison the
+    // smoothed value for good (#2377), so hold the smoothed value until a finite goal comes.
+    if (!Array.isArray(goal) || !goal.every(Number.isFinite)) return [smoothed[0], smoothed[1], smoothed[2]];
     for (let axis = 0; axis < 3; axis++) smoothed[axis] += (goal[axis] - smoothed[axis]) * amount;
     return [smoothed[0], smoothed[1], smoothed[2]];
   }

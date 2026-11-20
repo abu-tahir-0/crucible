@@ -57,3 +57,16 @@ test('a look-at with no good target yet leaves the aim where it is', () => {
   const warnings = captureWarnings(() => assert.deepEqual(look.target(0, [4, 5, 6]), [4, 5, 6]));
   assert.equal(warnings.length, 1);
 });
+
+test('a look-at with no good target and a NaN current aim keeps its smoothed aim finite, then eases to the first good target (#2377)', () => {
+  const goals = [[Number.NaN, 0, 0], [Number.NaN, 0, 0], [2, 4, 6], [2, 4, 6]];
+  let call = 0;
+  const look = createLookAt({ joints: ['head'], target: () => goals[call++], smoothSeconds: 0.1 });
+  const aims = [];
+  captureWarnings(() => {
+    for (let frame = 0; frame < goals.length; frame++) aims.push(look.target(frame / 30, [Number.NaN, Number.NaN, Number.NaN]));
+  });
+  for (const aim of aims) assert.ok(aim.every(Number.isFinite), `aim ${JSON.stringify(aim)} is not finite`);
+  assert.deepEqual(aims[1], [0, 0, 0]);
+  assert.ok(aims[2][0] > 0 && aims[3][0] > aims[2][0] && aims[3][0] < 2, 'the aim eases toward the good target');
+});

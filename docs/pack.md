@@ -2,7 +2,7 @@
 
 `crucible pack` compiles a recipe (`format: "crucible.scene"`) in Node into a compact data file, so a web page loads the renderer and the data but not the recipe compiler. The page uses a `<crucible-scene>` element: it shows a poster picture first, then swaps in live 3D when the scene is ready.
 
-This is slice 1 of #2178. It packs a still scene. Scroll, hover and click triggers come in later slices.
+This is slice 1 of #2178. It packs a still scene. Scroll, hover and view triggers are below; click triggers come in a later slice.
 
 ## Pack a scene
 
@@ -60,15 +60,17 @@ Pack names the recipe field and what to change. For now it refuses `motion`, `ti
 
 ## What it costs
 
-Measured on `public/recipes/view-transform.json` (a lamp, six parts), Chrome, gzip of every file the page downloaded, with the same lighting and the same still:
+Measured on `public/recipes/view-transform.json` (a lamp, six parts), gzip -9 of each file, with the same lighting and the same still. The JavaScript numbers are the slice 1 measurement of every file the page downloaded in Chrome; the runtime changed only by the small RGBE decoder.
 
-| | Recipe build (compiler + renderer + recipe) | Packed bundle |
-| --- | --- | --- |
-| JavaScript | 232,047 B | 113,960 B |
-| Data | the recipe JSON, inside the JavaScript | `scene.pack`, 114,681 B |
-| Total | 232,182 B | 228,641 B |
+| | Recipe build (compiler + renderer + recipe) | Packed bundle, probes as floats | Packed bundle, probes as RGBE |
+| --- | --- | --- | --- |
+| JavaScript | 232,047 B | 113,960 B | 113,960 B |
+| Data | the recipe JSON, inside the JavaScript | `scene.pack`, 112,645 B | `scene.pack`, 50,583 B |
+| Total | 232,182 B | 226,605 B | 164,543 B |
 
-The JavaScript halves. The data does not shrink for this scene, because the baked reflection probes of its two metal parts are 196 KB before gzip. A scene without baked probes pays much less data.
+The baked reflection probes of the lamp's two metal parts were 196 KB of the 351 KB raw pack. A probe is a map of linear colour, so the pack stores it as RGBE (three 8 bit mantissas and one shared exponent per pixel, 4 bytes instead of 12) and the runtime expands it to the `Float32Array` the renderer already takes. Every channel keeps within 1/128 of the brightest channel of its pixel. Raw `scene.pack` went from 350,824 B to 219,764 B. The rest is geometry, which the renderer needs as Float32 positions and normals and Uint32 indices, so pack leaves it as it is.
+
+A glossy variant of `packs/example-starter/recipes/crates.json` (metal crate trim at roughness 0.25, one probe) went from 54,836 B to 42,679 B of gzip data. The still of both scenes, drawn by the packed element, differs from the recipe build by at most 2 of 255 levels in any channel (RMSE 0.014 and 0.047).
 
 A baked room (`tests/fixtures/pack-baked-room.recipe.json` with `bake.preset` set to `"standard"`: six walls, a block, a ball and one lamp; 15,568 lightmap texels), 800 by 600 in GPU Chrome, gzip -9 of each file the page downloaded. This recipe build is bundled with esbuild and every agent-scene module, so its JavaScript is not comparable with the lamp table above:
 
@@ -80,3 +82,21 @@ A baked room (`tests/fixtures/pack-baked-room.recipe.json` with `bake.preset` se
 | Bake on the page | about 3.8 s of ray tracing in Node | none |
 
 The two stills are pixel identical (RMSE 0, no pixel differs).
+
+## Triggers
+
+Three attributes move the camera from the page, with no script. The element draws only while a trigger is moving the camera, and goes back to sleeping when it settles.
+
+```html
+<crucible-scene src="https://example.com/scene/scene.pack" poster="https://example.com/scene/poster.webp" scroll="orbit 0 90, dolly 1 0.6" hover-tilt="6" view="wide">
+  <script type="application/json">{ "wide": {}, "close": { "orbit": 40, "elevation": 10, "dolly": 0.5 } }</script>
+</crucible-scene>
+```
+
+| Attribute | What it does |
+| --- | --- |
+| `scroll="orbit 0 90"` | Scrubs the camera with the element's pass through the viewport: the first number is the value when its top edge enters at the bottom, the second when its bottom edge leaves at the top. Kinds: `orbit` (degrees around the up axis), `elevation` (degrees, kept under 85) and `dolly` (distance scale, 0.1 to 10). Join kinds with commas. The scroll listener is attached only while the element is on screen. |
+| `hover-tilt="6"` | Leans the camera up to 6 degrees (at most 30) toward the pointer, and eases back when it leaves. Off under `prefers-reduced-motion: reduce`. |
+| `view="close"` | Moves the camera to a named view with a short ease. Views are declared in a `<script type="application/json">` child as `orbit`, `elevation` and `dolly` offsets from the scene camera. Remove the attribute to go back. The name is `view`, not `state`, because `state` already reports `loading`, `live` or `error`. Under reduced motion the camera jumps instead of easing. |
+
+The three add up: scroll plus tilt plus the named view. A wrong attribute or an undeclared view name fires `crucible-scene-error` with what to write instead and is ignored; the scene stays `live`. Views read from the pack itself are not supported yet.

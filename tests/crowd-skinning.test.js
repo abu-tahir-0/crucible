@@ -226,3 +226,12 @@ test('a clip that would bake more frames than the limit is refused before any po
   );
   assert.equal(posesRead, 0);
 });
+
+test('the bound of a baked clip stays the same as the one measured from every stored vertex (#2377)', async () => {
+  const { pose, rig, duration } = await loadWalker();
+  const palette = bakeCrowdPalette(rig, seconds => pose.apply(seconds), { duration, frameRate: 15 });
+  // Measured on main before the bound stopped storing every skinned vertex of every frame.
+  assert.equal(palette.frameCount, 14);
+  assert.deepEqual(palette.bounds.center, [0.050939644767592496, 2.1885568965377695, 0.2168314320065643]);
+  assert.equal(palette.bounds.radius, 2.6319685550261824);
+});

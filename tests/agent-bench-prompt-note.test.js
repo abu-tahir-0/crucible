@@ -6,7 +6,7 @@ import { PROMPT_NOTE_MAX_LENGTH, resolvePromptNote, withPromptNote } from '../be
 
 const repository = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 const benchDirectory = join(repository, 'bench', 'agent-modeling');
-const threeJsNote = 'use 67js, you may write it like three.js';
+const threeJsNote = 'use Crucible, you may write it like three.js';
 
 function runScript(name, argumentsList) {
   return spawnSync(process.execPath, [join(benchDirectory, name), ...argumentsList], { encoding: 'utf8', windowsHide: true });

@@ -25,10 +25,9 @@ import { wearUniformValues } from './material-wear.js';
 import { fittedFogDensity } from './fog-fit.js';
 import { canUseCompactColor, respecifyColorTargets } from './compact-color.js';
 import { InstanceSelection, extractFrustumPlanes, geometryBoundingSphere, selectInstances } from './render-culling.js';
-import { fitWorldShadowView, resolveShadowLight, shadowBiasPerSlope } from './shadow-light.js';
+import { fitWorldShadowView, resolveShadowLight, shadowBiasPerSlope, sunShadowMapSize } from './shadow-light.js';
 import { MAX_MORPH_TARGETS, requireFeatureCode, deformationSupport, requireDeformationSupport, texturedReplaceSupport, textureUpdateSupport } from './shader-registry.js';
 
-const SHADOW_MAP_SIZE = 2048;
 // Liquid and foam see the resolved opaque scene, so they draw in their own pass after it.
 const TRANSLUCENT_TAGS = new Set(['liquid', 'foam']);
 // The 42nd float is the opacity of a blend or add part, so parts that differ only in opacity share a batch.
@@ -1190,7 +1189,14 @@ export class CrucibleRenderer {
     const missing = features.filter(feature => !this.shaderFeatures.has(feature));
     if (missing.length === 0) return;
     missing.forEach(feature => this.shaderFeatures.add(feature));
-    this.rebuildMainProgram();
+    try {
+      this.rebuildMainProgram();
+    } catch (error) {
+      // A program that is still linking (ProgramNotReady) leaves the old main program in place. Forget the features, so the draw that comes back asks for them again
+      // and finds the program built; keeping them would draw the old program with no render pass code, and the emission mask would read the lit image (#1360).
+      missing.forEach(feature => this.shaderFeatures.delete(feature));
+      throw error;
+    }
   }
 
   rebuildMainProgram() {
@@ -1288,8 +1294,8 @@ export class CrucibleRenderer {
   pointInstanceAttributes() {
     const stride = INSTANCE_STRIDE;
     for (let column = 0; column < 4; column++) this.attribute(2 + column, 4, stride * 4, column * 16);
-    for (let column = 0; column < 3; column++) this.attribute(6 + column, 3, stride * 4, 64 + column * 12);
-    this.attribute(9, 3, stride * 4, 100);
+    // The normal matrix (9 floats) and colour (3) are read as three vec4s (floats 16 to 27) so slot 9 stays empty (#2042).
+    for (let slot = 0; slot < 3; slot++) this.attribute(6 + slot, 4, stride * 4, 64 + slot * 16);
     this.attribute(10, 4, stride * 4, 112);
     this.attribute(11, 3, stride * 4, 128);
     this.attribute(12, 3, stride * 4, 140);
@@ -1735,7 +1741,9 @@ export class CrucibleRenderer {
   // cascades replace the main shader's lookup and nothing else (volume fog, subsurface thickness) still reads this map.
   shadowMapSizeWanted() {
     const casts = this.batches.some(batch => !batch.floor && batch.castShadow && !this.tintsShadow(batch));
-    return casts && !this.shadowCascades?.replacesSingleMap(this) ? SHADOW_MAP_SIZE : 1;
+    if (!casts || this.shadowCascades?.replacesSingleMap(this)) return 1;
+    const light = resolveShadowLight(this.world, this.activeLightDirection, this.shadowBounds, this.fittedWorldShadowView());
+    return sunShadowMapSize(light.extent);
   }
 
   createShadowMap() {
@@ -1774,7 +1782,7 @@ export class CrucibleRenderer {
     context.enable(context.DEPTH_TEST);
     context.enable(context.CULL_FACE);
     context.clear(context.DEPTH_BUFFER_BIT);
-    this.shadowBiasPerSlope = shadowBiasPerSlope(light, SHADOW_MAP_SIZE);
+    this.shadowBiasPerSlope = shadowBiasPerSlope(light, mapSize);
     this.drawShadowCasters(this.lightProjection, mapSize, true);
     this.drawTintedShadows();
     context.bindFramebuffer(context.FRAMEBUFFER, null);
@@ -2039,6 +2047,8 @@ export class CrucibleRenderer {
 
   releaseFrameTargets() {
     const context = this.context;
+    // The fog step may have left one of the textures deleted below on a mipmapped filter; binding it later is INVALID_OPERATION (1282, #2205).
+    this.mipmappedTexture = null;
     if (this.multisampleFramebuffer) this.backend.deleteFramebuffer(this.multisampleFramebuffer);
     if (this.resolveFramebuffer) this.backend.deleteFramebuffer(this.resolveFramebuffer);
     if (this.multisampleColor) this.backend.deleteRenderbuffer(this.multisampleColor);
@@ -2744,6 +2754,10 @@ export class CrucibleRenderer {
   }
 
   render(frame) {
+    this.localEmissionMaskReady = false;
+    if (frame.pass === undefined && !frame.reflectionTarget && (frame.environment?.localVolumes ?? this.environment?.localVolumes)?.length > 0) {
+      this.localEmissionMaskReady = requireFeatureCode('volumeFog').support.drawEmissionMask(this, frame);
+    }
     const { eye, target = [0, 1.2, 0], armorColor = [0.53, 0.39, 0.24], armorSurface = [0.88, 0.32], exposure = 1, inspection = false } = frame;
     const effects = resolveEffects(frame.effects);
     const environment = { lightDirection: [-3, 6, 4], fogColor: [0.35, 0.43, 0.43], fogDensity: 0.006, daylight: 1, explosionCenter: [0, 0, 0], ...this.environment, ...frame.environment };
@@ -2879,7 +2893,7 @@ export class CrucibleRenderer {
       return;
     }
     if (passMode) {
-      this.passSupport.copyToCanvas();
+      if (!frame.emissionMaskPass) this.passSupport.copyToCanvas();
     } else if (!this.benchmark) {
       this.drawTranslucent(frame, environment, assemblyAmount, environmentMap);
       this.drawBlendBatches(frame);
@@ -2995,4 +3009,3 @@ export class CrucibleRenderer {
 // Glaze is the public name of the real-time renderer; CrucibleRenderer stays for existing code.
 export { CrucibleRenderer as Glaze };
 /** Deprecated: the old name of CrucibleRenderer, removed in the release after 0.20.0. */
-export { CrucibleRenderer as Renderer67 };

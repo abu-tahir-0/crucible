@@ -86,3 +86,30 @@ test('the initial total follows static imports into shared chunks and skips lazy
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('the initial paths skip an external package imported statically and still follow the chunks around it', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'size-external-'));
+  try {
+    writeFileSync(join(directory, 'lazy.js'), "import { external } from 'external-package';\nexport const lazy = () => external();\n");
+    writeFileSync(join(directory, 'shared.js'), 'export const shared = () => [1, 2, 3].map(value => value * 2);\n');
+    writeFileSync(join(directory, 'lazy-two.js'), "import { shared } from './shared.js';\nexport const lazyTwo = () => shared();\n");
+    writeFileSync(join(directory, 'main.js'), "import { external } from 'external-package';\nimport { shared } from './shared.js';\nexport const load = () => import('./lazy.js').then(() => import('./lazy-two.js'));\nexport const run = () => external(shared());\n");
+    const result = await build({
+      stdin: { contents: "export * from './main.js';", resolveDir: directory, loader: 'js' },
+      bundle: true, minify: true, format: 'esm', write: false, metafile: true, splitting: true, outdir: join(directory, 'out'),
+      external: ['external-package'], logLevel: 'silent',
+    });
+    const outputs = result.metafile.outputs;
+    const externalImports = Object.values(outputs).flatMap(output => output.imports).filter(imported => imported.external);
+    assert.ok(externalImports.length > 0, 'the metafile lists the external import');
+    const initial = [...initialOutputPaths(result.metafile)];
+    assert.ok(initial.some(path => outputs[path].entryPoint === '<stdin>'), 'the stdin entry is counted');
+    assert.ok(initial.some(path => !outputs[path].entryPoint), 'the shared chunk is counted');
+    assert.ok(initial.every(path => path in outputs), 'every initial path is an output of the build, not the external package');
+    for (const path of Object.keys(outputs)) {
+      if (outputs[path].entryPoint && outputs[path].entryPoint !== '<stdin>') assert.ok(!initial.includes(path), 'a lazy module is not initial');
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

@@ -84,6 +84,17 @@ test('loops nest and call helpers within the work limit', () => {
   assert.equal(fine.loopWork, 256);
 });
 
+test('calls to helpers without loops add no loop work', () => {
+  const calls = '      shade(a);\n'.repeat(28);
+  const source = `float shade(float v) { return v * 0.5; }\nvoid f() {\n  float a = 1.0;\n  for (int x = 0; x < 3; x++) {\n    for (int y = 0; y < 64; y++) {\n${calls}    }\n  }\n}`;
+  assert.equal(validateShaderSnippet(source).loopWork, 192);
+});
+
+test('helper loops still count and the error lists what adds up', () => {
+  const source = 'float blur() { for (int a = 0; a < 64; a++) {} return 1.0; }\nvoid g() { for (int b = 0; b < 64; b++) { blur(); blur(); } }';
+  rejects(source, /Function g can run 8192 loop iterations per pixel.*adds up as 64 x \(blur\(\) = 64 \+ blur\(\) = 64\)/);
+});
+
 test('comments are blanked and never hide a rule', () => {
   const checked = validateShaderSnippet(`// # while\n/* uniform */ ${ENTRY}`);
   assert.ok(!checked.source.includes('while'));

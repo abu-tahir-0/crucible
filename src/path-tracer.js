@@ -9,10 +9,11 @@ import { acesChannel, displayColor } from './view-transform.js';
 import { VIEW_TRANSFORM_NAMES } from './view-transform-names.js';
 import {
   buildFrame, createSurface, environmentPdf, environmentRadiance, evaluateSurface, luminance, mirrorWeight, prepareSurface,
-  roughnessToAlpha, sampleEnvironment, sampleGlass, sampleSurface, setWhiteDiffuse, splitSubsurface,
+  roughnessToAlpha, sampleEnvironment, sampleGlass, sampleSurface, setWhiteDiffuse, splitSubsurface, writeEscapedAlbedo, writeFirstHitAlbedo,
 } from './path-tracer-shading.js';
 import { buildLightTree, chooseLightFromTree, LIGHT_TREE_FIRST_HIT_LIGHTS, resolveLightSelection } from './path-tracer-light-tree.js';
 import { createRandomWalk, WALK_OUTCOME } from './path-tracer-subsurface.js';
+import { describeUntracedWater } from './path-tracer-water.js';
 import { henyeyGreensteinPhase, sampleHenyeyGreensteinCosine, volumeInterval, createLocalVolumeCrossing, createLocalVolumeSurfaceShadow, meanEnvironmentRadiance } from './path-tracer-volume.js';
 
 // Offline still renderer: unidirectional path tracing on the CPU with next-event estimation for every light, the
@@ -526,6 +527,7 @@ function createPathTracer(scene, options) {
   // The denoiser's features come from the first surface a camera ray meets, not from fog in front of it.
   let featuresRecorded = false;
   const { lights, environment } = scene;
+  const cameraBackground = scene.cameraBackground ?? null;
   // With portals the sky is drawn through them (#1144); a scene with none samples the whole map as before.
   const portals = environment ? lights.portals ?? [] : [];
   if (lights.sun) buildFrame(lights.sun.direction, sunFrame);
@@ -802,7 +804,13 @@ function createPathTracer(scene, options) {
     else addOneLight(depth, normal);
   }
 
-  function addEscape(depth, previousPdf, afterMirror, originX, originY, originZ) {
+  // A ray that has only gone straight on or through glass is a camera ray: with world false it sees the flat background the
+  // rasterizer clears to, not the map (the map still lights the scene through the escapes of every other ray, #2016).
+  function addEscape(depth, previousPdf, afterMirror, originX, originY, originZ, isCameraRay) {
+    if (isCameraRay && cameraBackground) {
+      addRadiance(depth, throughput[0] * cameraBackground[0], throughput[1] * cameraBackground[1], throughput[2] * cameraBackground[2]);
+      return;
+    }
     if (!environment) return;
     environmentRadiance(environment, direction[0], direction[1], direction[2], sky);
     let weight = 1;
@@ -811,12 +819,13 @@ function createPathTracer(scene, options) {
       weight = previousPdf * previousPdf / (previousPdf * previousPdf + environmentSide * environmentSide);
     }
     addRadiance(depth, throughput[0] * sky[0] * weight, throughput[1] * sky[1] * weight, throughput[2] * sky[2] * weight);
+    if (!featuresRecorded) writeEscapedAlbedo(features.albedo);
   }
 
-  function recordFeatures(normal, isGlass) {
-    features.albedo[0] = isGlass ? 1 : hit.color[0];
-    features.albedo[1] = isGlass ? 1 : hit.color[1];
-    features.albedo[2] = isGlass ? 1 : hit.color[2];
+  function recordFeatures(normal, viewX, viewY, viewZ) {
+    const { transmission } = hit;
+    if (transmission < 1) prepareSurface(surface, hit.material, hit.metallic, hit.roughness, hit.color, normal, viewX, viewY, viewZ, hit.clearcoat);
+    writeFirstHitAlbedo(features.albedo, surface, hit.material, hit.color, transmission, normal[0] * viewX + normal[1] * viewY + normal[2] * viewZ);
     features.normal[0] = normal[0];
     features.normal[1] = normal[1];
     features.normal[2] = normal[2];
@@ -920,7 +929,7 @@ function createPathTracer(scene, options) {
     throughput[0] = 1;
     throughput[1] = 1;
     throughput[2] = 1;
-    features.albedo.fill(1);
+    features.albedo.fill(0);
     featuresRecorded = false;
     // A ray that finds nothing has the sky as its feature: one fixed normal and depth, so the filter treats sky as one surface.
     features.normal[0] = 0;
@@ -935,6 +944,7 @@ function createPathTracer(scene, options) {
     let positionZ = originZ;
     let previousPdf = 0;
     let afterMirror = true;
+    let isCameraRay = true;
     for (let depth = 0; depth <= options.bounces; depth++) {
       const found = intersect(scene, positionX, positionY, positionZ, direction[0], direction[1], direction[2], hit, depth === 0);
       const scattersInFog = scene.volume && scatterInFog(positionX, positionY, positionZ, found ? hit.distance : scene.farDistance);
@@ -946,6 +956,7 @@ function createPathTracer(scene, options) {
       if (scattersInFog) {
         previousPdf = scatterInMedium(depth);
         afterMirror = false;
+        isCameraRay = false;
         positionX = hit.point[0];
         positionY = hit.point[1];
         positionZ = hit.point[2];
@@ -953,7 +964,7 @@ function createPathTracer(scene, options) {
         continue;
       }
       if (!found) {
-        addEscape(depth, previousPdf, afterMirror, positionX, positionY, positionZ);
+        addEscape(depth, previousPdf, afterMirror, positionX, positionY, positionZ, isCameraRay);
         break;
       }
       const material = hit.material;
@@ -963,21 +974,22 @@ function createPathTracer(scene, options) {
       normal[1] = hit.normal[1] * facing;
       normal[2] = hit.normal[2] * facing;
       const isGlass = hit.transmission > 0 && random.next() < hit.transmission;
+      const viewX = -direction[0];
+      const viewY = -direction[1];
+      const viewZ = -direction[2];
       if (!featuresRecorded) {
-        recordFeatures(normal, isGlass);
+        recordFeatures(normal, viewX, viewY, viewZ);
         featuresRecorded = true;
       }
       const emissionScale = hit.material.emissionFresnel > 0
         ? fresnelSchlick(-(direction[0] * normal[0] + direction[1] * normal[1] + direction[2] * normal[2]), hit.material.emissionFresnel)
         : 1;
       addRadiance(depth, throughput[0] * hit.emission[0] * emissionScale, throughput[1] * hit.emission[1] * emissionScale, throughput[2] * hit.emission[2] * emissionScale);
-      const viewX = -direction[0];
-      const viewY = -direction[1];
-      const viewZ = -direction[2];
       if (isGlass) {
         const alpha = roughnessToAlpha(hit.roughness);
         if (!sampleGlass(normal, viewX, viewY, viewZ, entering, material.ior, alpha, random.next(), random.next(), random.next(), direction)) break;
         const refracted = direction[0] * normal[0] + direction[1] * normal[1] + direction[2] * normal[2] < 0;
+        if (!refracted) isCameraRay = false;
         if (refracted) {
           throughput[0] *= hit.color[0];
           throughput[1] *= hit.color[1];
@@ -985,6 +997,7 @@ function createPathTracer(scene, options) {
         }
         afterMirror = true;
       } else {
+        isCameraRay = false;
         prepareSurface(surface, material, hit.metallic, hit.roughness, hit.color, normal, viewX, viewY, viewZ, hit.clearcoat);
         const subsurface = material.subsurface;
         if (subsurface) splitSubsurface(surface, subsurface.weight);
@@ -1046,6 +1059,7 @@ export function describeIgnoredFeatures(parts, environment, backend = 'cpu', { k
   const fog = environment?.volumeFog;
   if (fog?.density > 0 && (fog.noiseAmount ?? 0.5) > 0) notes.add('volumeFog is traced as a uniform medium: noiseAmount, noiseScale and drift are ignored.');
   if (fog?.density > 0 && fog.ambient) notes.add('volumeFog.ambient is not added: the fog is lit by the traced lights and sky.');
+  if (environment?.world === true && environment.fogDensity > 0 && !(fog?.density > 0)) notes.add('fogDensity is traced as a uniform medium with extinction fogDensity per metre and fogColor as its scatter colour, lit by the traced lights and sky; the sky and ground haze shading of the rasterizer is not.');
   const hasSoftFalloff = [...(environment?.pointLights ?? []), ...(environment?.spotLights ?? [])].some(light => light.softFalloff === true);
   if (hasSoftFalloff && !kernelMaterials) notes.add('softFalloff is ignored: only the native cycles kernel draws a light as an oriented disk, the other tracers draw a sphere.');
   const lightsWithOwnLimit = [...(environment?.pointLights ?? []), ...(environment?.spotLights ?? []), ...(environment?.areaLights ?? [])];
@@ -1057,12 +1071,15 @@ export function describeIgnoredFeatures(parts, environment, backend = 'cpu', { k
   if (hasGridVolume && kernelMaterials && environment.volumeShutter > 0) notes.add('environment.volumeShutter is ignored for a grid volume: Cook draws the grid as it is at the frame time, with no motion blur from its velocity channel. Use backend "cpu" or "webgpu" for a blurred blast.');
   if (!environment?.map) notes.add('There is no environment map, so the sky is black and only the lights shine.');
   if (environment?.fillIntensity > 0) notes.add('fillIntensity is ignored: the two fixed fill lights are rasterizer only. Add a point or area light, or raise environmentIntensity, to light the shadow side of a trace.');
-  if (environment?.world === true) notes.add('world: true is ignored: the outdoor haze shading is rasterizer only, and a trace draws the environment map behind the picture and lights with it whatever world says.');
+  if (environment?.world === true) notes.add('world: true is ignored: the outdoor haze shading is rasterizer only, and a trace draws the environment map behind the picture and lights with it.');
+  if (environment?.world === false && (kernelMaterials || backend !== 'cpu')) notes.add('world: false draws the flat background colour behind the picture only in the CPU tracer: this tracer draws the environment map there, as it lights with it.');
   if (environment?.cameraIntensity !== undefined && !kernelMaterials) notes.add('cameraIntensity is ignored: only the native cycles kernel draws the sky a camera ray sees at its own strength, the other tracers use the map intensity.');
   for (const part of parts) {
     const material = part.material ?? {};
+    for (const note of describeUntracedWater(part)) notes.add(note);
+    if (material.tag === 'water' && backend === 'gpu') notes.add('The depth tint under a thin water sheet is not drawn: the CPU, WebGPU and native cycles tracers add an absorbing medium under it, the WebGL tracer draws the water clear.');
     for (const field of IGNORED_MAP_FIELDS) if (material[field]) notes.add(`${field} is ignored.`);
-    if (material.tag && material.tag !== 'surface') notes.add(`${material.tag} materials are traced as plain surfaces.`);
+    if (material.tag && material.tag !== 'surface' && material.tag !== 'water') notes.add(`${material.tag} materials are traced as plain surfaces.`);
     if (material.alphaMode === 'blend' && hasGraphOpacity(material)) notes.add('A graph opacity output is traced as a cutout at 0.5.');
     else if (material.alphaMode === 'blend' && !kernelMaterials) notes.add('Blended transparency is traced as opaque.');
     if (!kernelMaterials && (material.layerMaps?.clearcoatTexture || material.transmissionMap)) notes.add('Graph clearcoat and transmission masks are read by the CPU tracer; the GPU tracers use the factors.');

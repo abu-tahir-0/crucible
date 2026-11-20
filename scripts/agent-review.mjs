@@ -5,12 +5,10 @@ export const REVIEW_LIMITS = Object.freeze({ minimumShots: 1, maximumShots: 4,
   labelHeight: 24, maximumLabelLength: 48, maximumGridWidth: 960, maximumGridHeight: 1008,
   maximumImageBytes: 1024 * 1024, maximumPendingFrames: 1 });
 
-// A review camera is a view, not a lens: its field of view is in degrees, so the lens fields of a scene camera have no place here.
+// A review camera is a view plus a projection: its field of view is in degrees, so the lens fields of a scene camera have no place here.
 const CAMERA_FIELD_HINTS = Object.freeze({
   focalLength: 'pass fov in degrees instead, such as fov 45',
   sensorWidth: 'pass fov in degrees instead, such as fov 45',
-  projection: 'a review samples the scene camera as a perspective view; set eye, target and fov',
-  orthoScale: 'a review samples the scene camera as a perspective view; set eye, target and fov',
 });
 
 function fields(value, allowed, name) {
@@ -38,6 +36,41 @@ function clock(value, name) {
     throw new RangeError(`${name} must be finite and within zero and 3600.`);
   }
   return value;
+}
+
+const REVIEW_CAMERA_FIELDS = ['eye', 'target', 'up', 'fov', 'near', 'far', 'projection', 'orthoScale'];
+const REVIEW_VECTOR_FIELDS = ['eye', 'target', 'up'];
+const REVIEW_PROJECTIONS = ['perspective', 'orthographic'];
+
+function isFloat32Number(value) {
+  return Number.isFinite(value) && Number.isFinite(Math.fround(value));
+}
+
+/** Eye, target and up are three finite numbers, the other fields one; projection is a name and orthoScale a positive size. */
+function validateReviewCamera(camera) {
+  for (const [field, value] of Object.entries(camera)) {
+    if (field === 'projection') {
+      if (!REVIEW_PROJECTIONS.includes(value)) {
+        throw new RangeError(`Review camera projection must be one of ${REVIEW_PROJECTIONS.join(', ')}; got ${JSON.stringify(value)}.`);
+      }
+      continue;
+    }
+    const isVector = REVIEW_VECTOR_FIELDS.includes(field);
+    const components = isVector ? value : [value];
+    if (!Array.isArray(components) || components.length !== (isVector ? 3 : 1) || !components.every(isFloat32Number)) {
+      throw new RangeError('Shot camera must contain finite Float32 values.');
+    }
+    if (field === 'orthoScale' && !(value > 0)) {
+      throw new RangeError('Review camera orthoScale must be above 0, such as orthoScale 8.');
+    }
+  }
+}
+
+/** The shader time of a shot: the one asked for, else the shot's own time so a post pass that reads `time` moves with the pose, else zero. */
+function shotRendererTime(shot) {
+  if (shot.rendererTime !== undefined) return clock(shot.rendererTime, 'Renderer time');
+  const sampledTime = shot.motionTime ?? shot.animation?.time ?? 0;
+  return clock(sampledTime, 'Renderer time');
 }
 
 /** Shots of one scene render together: the source scene, or one branch each. */
@@ -75,14 +108,8 @@ export function normalizeReview(input) {
       throw new TypeError('Shot label must be a string of at most 48 characters.');
     }
     if (shot.camera !== undefined) {
-      fields(shot.camera, ['eye', 'target', 'up', 'fov', 'near', 'far'], 'camera');
-      for (const [field, value] of Object.entries(shot.camera)) {
-        const components = ['eye', 'target', 'up'].includes(field) ? value : [value];
-        if (!Array.isArray(components) || components.length !== (['eye', 'target', 'up'].includes(field) ? 3 : 1) ||
-            !components.every(component => Number.isFinite(component) && Number.isFinite(Math.fround(component)))) {
-          throw new RangeError('Shot camera must contain finite Float32 values.');
-        }
-      }
+      fields(shot.camera, REVIEW_CAMERA_FIELDS, 'camera');
+      validateReviewCamera(shot.camera);
     }
     if (shot.animation !== undefined) {
       fields(shot.animation, ['clip', 'time'], 'animation');
@@ -95,7 +122,7 @@ export function normalizeReview(input) {
       ...(shot.branch === undefined ? {} : { branch: shot.branch }),
       ...(shot.camera === undefined ? {} : { camera: structuredClone(shot.camera) }),
       ...(shot.animation === undefined ? {} : { animation: structuredClone(shot.animation) }),
-      motionTime, rendererTime: clock(shot.rendererTime === undefined ? 0 : shot.rendererTime, 'Renderer time') };
+      motionTime, rendererTime: shotRendererTime(shot) };
   });
   const columns = shots.length > 1 ? 2 : 1;
   const groups = groupShotsByBranch(shots);

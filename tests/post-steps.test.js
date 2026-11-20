@@ -291,3 +291,18 @@ test('each named step changes the picture and the default still keeps its hash',
   // Hash of the default still as origin/main drew it before the named steps (bench/post/post-steps.mjs --root=<origin/main checkout>).
   assert.equal(summary.default.hash, '8741ffc3aaace9a8');
 });
+
+test('a user pass reads the camera eye of the frame it draws, so a camera track moves it', () => {
+  const calls = [];
+  const renderer = { context: recordingContext(calls), canvas: { width: 16, height: 9 }, postStages: [], depthTexture: 'depth', whiteTexture: 'white',
+    inverseViewProjection: mat4.create(), resolveFrame() {}, benchmark: false };
+  installUserPasses(renderer);
+  renderer.userPasses.set([{ name: 'shafts', fragment: 'vec4 userPass(vec2 uv) { return vec4(cameraEye, 1.0); }' }]);
+  assert.match(buildPassFragment(normalizeUserPasses([{ name: 'shafts', fragment: 'vec4 userPass(vec2 uv) { return vec4(cameraEye, 1.0); }' }])[0]).source, /uniform vec3 cameraEye;/);
+  const uploads = [[0, 1, 5], [4, 2, -3]].map(eye => {
+    calls.length = 0;
+    renderer.resolveFrame({ time: 0, eye });
+    return calls.filter(call => call[0] === 'uniform3fv').at(-1)[2];
+  });
+  assert.deepEqual(uploads, [[0, 1, 5], [4, 2, -3]]);
+});

@@ -10,7 +10,6 @@ import { fileURLToPath } from 'node:url';
 import { crc32, deflateRawSync } from 'node:zlib';
 import packageMetadata from '../package.json' with { type: 'json' };
 import { PACK_MANIFEST_FILE } from '../src/pack-manifest.js';
-import { LEGACY_ENGINE_KEY, LEGACY_PACK_MANIFEST_FILE } from '../src/legacy-names.js';
 import { loadPack } from './agent-packs.mjs';
 import { validatePackScene } from './pack-scene-validator.mjs';
 
@@ -112,8 +111,7 @@ async function readPackFiles(folder) {
 
 async function describePack(folder, outputDirectory) {
   const pack = await loadPack(folder, { packageVersion: packageMetadata.version, validateScene: validatePackScene });
-  const manifestFile = existsSync(join(folder, PACK_MANIFEST_FILE)) ? PACK_MANIFEST_FILE : LEGACY_PACK_MANIFEST_FILE;
-  const manifest = JSON.parse(await readFile(join(folder, manifestFile), 'utf8'));
+  const manifest = JSON.parse(await readFile(join(folder, PACK_MANIFEST_FILE), 'utf8'));
   const stem = `${pack.name}-${pack.version}`;
   const zip = createZip(await readPackFiles(folder));
   await writeFile(join(outputDirectory, `${stem}.zip`), zip);
@@ -128,7 +126,7 @@ async function describePack(folder, outputDirectory) {
   return {
     name: pack.name,
     version: pack.version,
-    engines: manifest.engines['crucible'] ?? manifest.engines[LEGACY_ENGINE_KEY],
+    engines: manifest.engines['crucible'],
     license: pack.license,
     author: pack.author,
     description: pack.description,

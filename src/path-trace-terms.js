@@ -9,7 +9,7 @@ import { agentEnvironmentMap } from './agent-look.js';
 //   fillIntensity: two fixed, unshadowed directional lights with hand-picked colours; nothing in a Cycles scene matches them.
 //   daylight, skyTop, skyBottom: measured to change nothing in the rasterizer while an environment map lights the scene, which
 //     every recipe has, so the trace already agrees.
-//   world: true: the rasterizer's outdoor haze shading; the tracer draws the map behind the picture either way.
+//   world: true: the rasterizer's outdoor haze shading; the tracer draws the map behind the picture. world: false draws the flat background there instead (#2016).
 
 const scaledMaps = new WeakMap();
 

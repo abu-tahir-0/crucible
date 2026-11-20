@@ -327,3 +327,46 @@ test('more than 8 modifiers and a spring joint without stiffness are refused', a
     assert.match(refusedSpring.text, /stiffness/);
   });
 });
+
+function shapeDropRecipe(bodyFields) {
+  return oneBoxRecipe({
+    nodes: [
+      { id: 'floor', geometry: 'cube', material: 'red', scale: [10, 0.2, 10], translation: [0, -0.1, 0] },
+      { id: 'piece', geometry: 'cube', material: 'red', translation: [0, 2, 0] },
+    ],
+    physics: { duration: 2, bodies: [{ node: 'floor', type: 'fixed', shape: 'box' }, { node: 'piece', ...bodyFields }] },
+  });
+}
+
+const BODY_SHAPE_CASES = [
+  ['cylinder', { shape: 'cylinder' }],
+  ['cone', { shape: 'cone' }],
+  ['compound', { shape: 'compound', shapes: [{ shape: 'box', halfExtents: [0.5, 0.5, 0.5] }, { shape: 'cone', radius: 0.2, halfHeight: 0.2, translation: [0, 0.7, 0] }] }],
+];
+
+for (const [label, bodyFields] of BODY_SHAPE_CASES) {
+  test(`scene_create accepts a ${label} physics body and it falls and rests on the floor`, async () => {
+    await withRoundTripClient(async client => {
+      const recipe = shapeDropRecipe(bodyFields);
+      await assertAccepted(client, recipe);
+      const exported = await exportedRecipe(client);
+      assert.equal(exported.physics.bodies[1].shape, label);
+      await assertAccepted(client, exported);
+    });
+    const scene = createAgentScene(shapeDropRecipe(bodyFields));
+    scene.sampleMotion(2);
+    const piece = scene.inspect({}).physics.bodies.find(body => body.node === 'piece');
+    assert.ok(Math.abs(piece.finalPosition[1] - 0.5) < 0.03, `${label} rests on the floor, got ${piece.finalPosition[1]}`);
+  });
+}
+
+test('the physics body schema error and scene_capabilities list every accepted shape', async () => {
+  await withRoundTripClient(async client => {
+    const refused = await call(client, 'scene_create', { recipe: shapeDropRecipe({ shape: 'torus' }) });
+    assert.equal(refused.isError, true);
+    for (const shape of AGENT_SCENE_CAPABILITIES.physics.shapes) assert.match(refused.text, new RegExp(`"${shape}"`));
+    const capabilities = await call(client, 'scene_capabilities', { topic: 'physics' });
+    for (const shape of ['cylinder', 'cone', 'compound']) assert.match(capabilities.text, new RegExp(shape));
+    assert.match(capabilities.text, /shapes/);
+  });
+});

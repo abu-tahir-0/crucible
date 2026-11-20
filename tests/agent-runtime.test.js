@@ -121,7 +121,7 @@ function hitNearestLamp(ray) {
 }
 
 async function reviewRuntimeHarness({ failShot, blockShot = false, oversize = false, deadlineMs,
-  failDispose = false, heapSize = 1024, stallPrivatePage = false, blockPrivateCreate = false, resumeDelayMs = 0, suspendDelayMs = 0, failResume = false, hangMethod, failPrivateCreate = false, failPrivateCreateMessage, disposeGate, disposeLostBridge = false, hangBrowserClose = false, closeTimeoutMs, failFirstGoto = false, jobRender, sceneBake, exportedRecipe, runtimeOptions = {}, contextOverrides = {}, lookBytesPerPixel = 0, inspection } = {}) {
+  failDispose = false, heapSize = 1024, stallPrivatePage = false, blockPrivateCreate = false, resumeDelayMs = 0, suspendDelayMs = 0, failResume = false, hangMethod, failPrivateCreate = false, failPrivateCreateMessage, disposeGate, disposeLostBridge = false, disposeWithoutScene = false, hangBrowserClose = false, closeTimeoutMs, failFirstGoto = false, jobRender, sceneBake, exportedRecipe, runtimeOptions = {}, contextOverrides = {}, lookBytesPerPixel = 0, inspection } = {}) {
   const events = [];
   const sourceCalls = [];
   const sandboxTimers = new Set();
@@ -164,6 +164,7 @@ async function reviewRuntimeHarness({ failShot, blockShot = false, oversize = fa
         throw new Error(typeof failPrivateCreateMessage === 'string' ? failPrivateCreateMessage : 'Injected private create failure');
       }
       if (method === 'dispose' && this.privateTarget && disposeLostBridge) throw new TypeError("page.evaluate: TypeError: Cannot read properties of undefined (reading 'dispose')");
+      if (method === 'dispose' && this.privateTarget && disposeWithoutScene) throw new Error('page.evaluate: Error: No scene is active: it was never created, was disposed, or scene_create failed. Call scene_create or scene_create_asset first, then pass the sessionId it returns.');
       if (method === 'dispose' && disposeGate) await disposeGate;
       if (method === 'resume' && failResume) throw new Error('Injected resume failure');
       if (method === 'create' && this.privateTarget && blockPrivateCreate) return new Promise((resolve, reject) => { this.rejectShot = reject; });
@@ -222,7 +223,11 @@ async function reviewRuntimeHarness({ failShot, blockShot = false, oversize = fa
     .replaceAll('import.meta.url', JSON.stringify(import.meta.url))
     .replace("import('playwright-core')", 'Promise.resolve({ chromium: globalThis.chromium })');
   if (closeTimeoutMs) source = source.replace('const BROWSER_CLOSE_TIMEOUT_MS = 5000;', `const BROWSER_CLOSE_TIMEOUT_MS = ${closeTimeoutMs};`);
-  if (deadlineMs) source = source.replace('const EVALUATION_TIMEOUT_MS = 30000;', `const EVALUATION_TIMEOUT_MS = ${deadlineMs};`);
+  const deadlineLine = 'const EVALUATION_TIMEOUT_MS = previewDeadlineMilliseconds();';
+  if (deadlineMs) {
+    assert.ok(source.includes(deadlineLine), `the harness shortens the deadline by rewriting "${deadlineLine}"; update it to match agent-runtime.mjs`);
+    source = source.replace(deadlineLine, `const EVALUATION_TIMEOUT_MS = ${deadlineMs};`);
+  }
   const context = createContext({ ...(await importedBindings(originalSource)),
     packageMetadata: { version: 'test' }, existsSync: () => true, readFile: async () => '',
     createRequire: () => ({ resolve: () => { throw new Error('no peer in tests'); } }),
@@ -523,6 +528,16 @@ runTest('submitJob refuses a scene of plain nodes whose exact count is over the 
   assert.equal(accepted.attempt, undefined);
 });
 
+runTest('submitJob refuses stills estimated over the combined output byte budget before rendering (#2199)', async () => {
+  const rejected = await submitWithInspection(NON_INDEXED_INSPECTION(100), {
+    kind: 'stills', width: 1280, height: 720, fps: 24, stillCount: 288, quality: 'realtime-high',
+  });
+  assert.match(rejected.attempt?.message ?? '', /combined output byte budget/);
+  assert.match(rejected.attempt?.message ?? '', /224 frames/);
+  assert.equal(rejected.submitted.length, 0);
+  assert.equal(rejected.phase, 'ready');
+});
+
 runTest('a slow suspend at job start does not fail the runtime (#1256)', async () => {
   let runJob;
   const controller = { list: () => [], close: async () => {}, submit: async () => ({ jobId: 'job' }) };
@@ -624,6 +639,22 @@ runTest('a job that fails for its own reason is not masked by a lost page bridge
     const failure = await runJob({ jobId: randomUUID(), sessionId, directory: tmpdir(), snapshot: { recipe: {} },
       settings: { kind: 'image', width: 64, height: 64 }, signal: new AbortController().signal, progress: async () => {} }).then(() => assert.fail('the job must fail'), error => error);
     assert.match(failure.message, /Injected scene problem/);
+  } finally { await runtime.close(); }
+});
+
+runTest('a job whose scene was never created reports the create failure, not "No scene is active" from the cleanup (#2198)', async () => {
+  let runJob;
+  const controller = { list: () => [], close: async () => {}, submit: async () => ({ jobId: 'job' }) };
+  const harness = await reviewRuntimeHarness({ failPrivateCreate: true, disposeWithoutScene: true, failPrivateCreateMessage: 'Injected particles problem',
+    runtimeOptions: { jobs: join(tmpdir(), 'crucible-job-root-test') },
+    contextOverrides: { createAgentRenderJobs: async ({ run }) => { runJob = run; return controller; } } });
+  const { runtime, sessionId } = harness;
+  try {
+    await runtime.submitJob({ sessionId, expectedRevision: 0, settings: { kind: 'image', width: 64, height: 64 } });
+    const failure = await runJob({ jobId: randomUUID(), sessionId, directory: tmpdir(), snapshot: { recipe: {} },
+      settings: { kind: 'image', width: 64, height: 64 }, signal: new AbortController().signal, progress: async () => {} }).then(() => assert.fail('the job must fail'), error => error);
+    assert.match(failure.message, /Injected particles problem/);
+    assert.doesNotMatch(failure.message, /No scene is active/);
   } finally { await runtime.close(); }
 });
 
@@ -1123,6 +1154,14 @@ runTest('scene_apply add-node places a catalog GLB by file name (#1843)', async 
   await runtime.apply({ sessionId, operations: [{ type: 'add-node', node: { id: 'sheep1-body', asset: { name: 'sheep_body.glb' } } }] });
   const applyCall = sourceCalls.filter(call => call.method === 'apply').at(-1);
   assert.deepEqual(applyCall.input.operations[0].node.asset, { id: sheepId });
+});
+
+runTest('scene_apply with a branch sends the bytes of the catalog GLB it places (#2267)', async context => {
+  const { runtime, sessionId, sourceCalls, sheepId } = await namedAssetHarness(context);
+  await runtime.apply({ sessionId, branch: 'flock', operations: [{ type: 'add-node', node: { id: 'sheep1-body', asset: { name: 'sheep_body.glb' } } }] });
+  const branchCall = sourceCalls.filter(call => call.method === 'branchApply').at(-1);
+  assert.deepEqual(branchCall.input.operations[0].node.asset, { id: sheepId });
+  assert.deepEqual(Object.keys(branchCall.input.assetData), [sheepId]);
 });
 
 runTest('an unknown asset name is refused with near names and the catalog tool to run (#1843)', async context => {

@@ -29,6 +29,7 @@ const MODULE_LOADERS = {
   liquidShader: () => import('./liquid-shader.js'),
   subsurfaceShader: () => import('./subsurface-shader.js'),
   fogShader: () => import('./fog-shader.js'),
+  volumeEmissionMask: () => import('./volume-emission-mask.js'),
   retroShader: () => import('./retro-shader.js'),
   glitterShader: () => import('./glitter-shader.js'),
   worldMaterials: () => import('./world-material-shader.js'),
@@ -103,6 +104,8 @@ const MODULE_MARKERS = {
   glitterShader: ['"waterGlint"'],
   // Any mention loads it, because an edit can set the density through a path or the environment of an operation.
   fogShader: ['volumeFog', 'localVolumes', '"add-explosion"'],
+  // A volume that casts a shadow draws the emission of the parts it covers apart from the dimmed light (#1360); loaded up front, the first frame already has it.
+  volumeEmissionMask: ['"castShadow":true'],
   worldMaterials: ['"tag":"water"', '"waterPreset"', '"absorption"', '"turbidity"', '"caustics"', '"waterRamp"', '"vegetation":{', '"tag":"foliage"', '"tag":"grass"', '"tag":"terrain"', '"tag":"fire"', '"tag":"smoke"', '"moss"'],
   terrain: ['"type":"terrain"'],
   // No recipe text asks for it, only the path option of scene_inspect does, so a host loads it with loadAllAgentSceneModules.

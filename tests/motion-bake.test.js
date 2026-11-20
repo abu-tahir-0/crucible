@@ -101,7 +101,7 @@ test('a bake that cannot be honest names the field and what to pass', () => {
   fails({ nodes: ['rider'], end: 0, start: 1 }, /end.*after start/);
   fails({ nodes: ['rider'], step: 0.001 }, /step.*0.0083/);
   fails({ nodes: ['rider'], step: 0.001 * 20, end: 30 }, /step.*512 samples/);
-  fails({ nodes: ['rider'], step: 0.01 }, /tolerance.*64 keys/);
+  fails({ nodes: ['rider'], step: 0.01, end: 4 }, /tolerance.*256 keys/);
   fails({ nodes: ['rider'], tolerance: { position: -1 } }, /tolerance.position/);
   fails({ nodes: ['rider'], speed: 2 }, /Unknown.*speed/);
   assert.equal(scene.revision, 0, 'a failed bake changes nothing');

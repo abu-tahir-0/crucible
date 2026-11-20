@@ -129,8 +129,8 @@ test('a file inside an addon that links outside the package is not served', cont
 test('startup options are checked and the import map covers the addon entries', () => {
   assert.throws(() => resolveAddons({ names: ['x'], version: VERSION }), /--allow-addon needs --addons/);
   assert.throws(() => resolveAddons({ folder: 'relative', names: [], version: VERSION }), /absolute path/);
-  const { imports } = addonImportMap({ '.': './build/67.module.js', './addons/player': './build/player.js', './standalone': './build/x.js' });
-  assert.deepEqual(imports, { '@codepawlhq/crucible': '/67.module.js', '@codepawlhq/crucible/addons/player': '/player.js' });
+  const { imports } = addonImportMap({ '.': './build/crucible.module.js', './addons/player': './build/player.js', './standalone': './build/x.js' });
+  assert.deepEqual(imports, { '@codepawlhq/crucible': '/crucible.module.js', '@codepawlhq/crucible/addons/player': '/player.js' });
 });
 
 test('the server parser takes --allow-addon more than once and keeps the error style', async () => {

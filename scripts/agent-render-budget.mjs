@@ -59,7 +59,7 @@ export function budgetCandidates(base, tracerBackend) {
   const tracerAllowed = !TRACER_BLOCKERS.some(name => base[name]) && !(base.format && base.format !== 'png');
   if (tracerAllowed) {
     for (const samples of PATH_TRACER_SAMPLE_STEPS) {
-      candidates.push({ tier: 'final', label: `path tracer, ${samples} samples, full size`, settings: { ...base, quality: 'final', renderer: { type: 'pathTracer', backend: tracerBackend, samples, denoise: 'wavelet' } } });
+      candidates.push({ tier: 'final', label: `path tracer, ${samples} samples, full size`, settings: { ...base, quality: 'final', renderer: { type: 'pathTracer', backend: tracerBackend, samples, denoise: true } } });
     }
   }
   // A region is placed in pixels of the full frame, so a region job keeps the full size.
